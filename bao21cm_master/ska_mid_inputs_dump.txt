@@ -1,0 +1,385 @@
+=== bao21cm-master input parameter dump ===
+Experiments: SKA1MIDbase1 SKA1MIDbase2
+
+=== Fisher run-time settings (what you pass on the command line) ===
+
+[RunSettings]
+  cache_pk : cache_pk.dat  # Matter power spectrum cache file (k, P(k))  | used: run_fisher_sigmas.py / print_ska_mid_inputs.py (P(k) input)
+  kmax     : 0.3  # Maximum k used in Fisher integral [1/Mpc]  | used: run_fisher_sigmas.py -> baofisher.fisher(kmin,kmax)
+  kmin     : 0.001  # Minimum k used in Fisher integral [1/Mpc]  | used: run_fisher_sigmas.py -> baofisher.fisher(kmin,kmax)
+  nsamp_k  : 60  # Number of k samples (log grid) for Fisher integral  | used: run_fisher_sigmas.py sets baofisher.NSAMP_K
+  nsamp_u  : 120  # Number of μ samples for Fisher integral  | used: run_fisher_sigmas.py sets baofisher.NSAMP_U
+
+[RunSettings (indexed)]
+  [001] cache_pk = cache_pk.dat  # Matter power spectrum cache file (k, P(k))  | used: run_fisher_sigmas.py / print_ska_mid_inputs.py (P(k) input)
+  [002] kmax     = 0.3  # Maximum k used in Fisher integral [1/Mpc]  | used: run_fisher_sigmas.py -> baofisher.fisher(kmin,kmax)
+  [003] kmin     = 0.001  # Minimum k used in Fisher integral [1/Mpc]  | used: run_fisher_sigmas.py -> baofisher.fisher(kmin,kmax)
+  [004] nsamp_k  = 60  # Number of k samples (log grid) for Fisher integral  | used: run_fisher_sigmas.py sets baofisher.NSAMP_K
+  [005] nsamp_u  = 120  # Number of μ samples for Fisher integral  | used: run_fisher_sigmas.py sets baofisher.NSAMP_U
+
+=== Cosmology (experiments.cosmo) ===
+
+[Background]
+  N_eff          : 3.046  # Effective number of relativistic species
+  h              : 0.67  # Dimensionless Hubble parameter (H0 = 100 h km/s/Mpc)  | used: baofisher.background_evolution_splines and P(k) units
+  mnu            : 0.0  # Sum of neutrino masses [eV] (if used)
+  omega_M_0      : 0.316  # Present-day total matter density fraction Ωm  | used: baofisher.background_evolution_splines (E(z), distances)
+  omega_b_0      : 0.049  # Present-day baryon density fraction Ωb  | used: power spectrum generation (CAMB) and transfer function
+  omega_lambda_0 : 0.684  # Present-day dark energy density fraction ΩΛ  | used: baofisher.background_evolution_splines (E(z), distances)
+
+[DarkEnergy]
+  w0 : -1.0  # Dark energy equation of state at a=1  | used: baofisher.background_evolution_splines (E(z))
+  wa : 0.0  # Dark energy evolution parameter (CPL)  | used: baofisher.background_evolution_splines (E(z))
+
+[Primordial]
+  k_piv : 0.05  # Pivot scale for ns [1/Mpc]
+  ns    : 0.962  # Scalar spectral index (tilt of primordial spectrum)  | used: power spectrum shape (CAMB) and spline_pk_nobao
+
+[Growth]
+  gamma   : 0.55  # Growth index in f≈Ωm(z)^γ  | used: baofisher.background_evolution_splines (growth rate f≈Ωm^γ)
+  gamma0  : 0.55
+  gamma1  : 0.0
+  sigma_8 : 0.834  # RMS linear matter fluctuation at 8 h⁻¹ Mpc  | used: power spectrum normalization (CAMB As rescale)
+
+[HI]
+  bHI0       : 0.677  # HI bias normalization at z~0 used by the model  | used: baofisher.bias_HI / IM signal amplitude
+  omega_HI_0 : 0.000486  # Present-day HI density fraction ΩHI  | used: baofisher.Tb / IM signal amplitude
+
+[AP/Geometry]
+  apar  : 1.0  # Line-of-sight AP dilation parameter α∥ (fiducial=1)  | used: baofisher.fisher (AP mapping: k∥ and rν)
+  aperp : 1.0  # Transverse AP dilation parameter α⊥ (fiducial=1)  | used: baofisher.fisher (AP mapping: k⊥ and distances)
+
+[BAO/Nonlinear]
+  sigma_nl : 7.0  # Nonlinear BAO damping scale (smooths BAO wiggles)  | used: baofisher.spline_pk_nobao / BAO damping model
+
+[ModifiedGravity]
+  A_xi   : 0.0
+  eta0   : 0.0
+  eta1   : 0.0
+  logkmg : -1.3010299956639813
+
+[BiasModel]
+  b_1     : 0.0
+  k0_bias : 0.1
+
+[Amplitude/Nuisance]
+  A   : 1.0
+  fNL : 0.0  # Local-type primordial non-Gaussianity parameter
+
+[Foregrounds]
+  A    : [57.0, 0.014, 700.0, 0.088]
+  l_p  : 1000.0
+  mx   : [-2.07, -2.1, -2.8, -2.15]
+  nu_p : 130.0
+  nx   : [1.1, 1.0, 2.4, 3.0]
+
+[Cosmology (indexed)]
+  [001] A                = 1.0
+  [002] A_xi             = 0.0
+  [003] N_eff            = 3.046  # Effective number of relativistic species
+  [004] apar             = 1.0  # Line-of-sight AP dilation parameter α∥ (fiducial=1)  | used: baofisher.fisher (AP mapping: k∥ and rν)
+  [005] aperp            = 1.0  # Transverse AP dilation parameter α⊥ (fiducial=1)  | used: baofisher.fisher (AP mapping: k⊥ and distances)
+  [006] bHI0             = 0.677  # HI bias normalization at z~0 used by the model  | used: baofisher.bias_HI / IM signal amplitude
+  [007] b_1              = 0.0
+  [008] eta0             = 0.0
+  [009] eta1             = 0.0
+  [010] fNL              = 0.0  # Local-type primordial non-Gaussianity parameter
+  [011] foregrounds.A    = [57.0, 0.014, 700.0, 0.088]  | used: baofisher foreground/noise model
+  [012] foregrounds.l_p  = 1000.0  | used: baofisher foreground/noise model
+  [013] foregrounds.mx   = [-2.07, -2.1, -2.8, -2.15]  | used: baofisher foreground/noise model
+  [014] foregrounds.nu_p = 130.0  | used: baofisher foreground/noise model
+  [015] foregrounds.nx   = [1.1, 1.0, 2.4, 3.0]  | used: baofisher foreground/noise model
+  [016] gamma            = 0.55  # Growth index in f≈Ωm(z)^γ  | used: baofisher.background_evolution_splines (growth rate f≈Ωm^γ)
+  [017] gamma0           = 0.55
+  [018] gamma1           = 0.0
+  [019] h                = 0.67  # Dimensionless Hubble parameter (H0 = 100 h km/s/Mpc)  | used: baofisher.background_evolution_splines and P(k) units
+  [020] k0_bias          = 0.1
+  [021] k_piv            = 0.05  # Pivot scale for ns [1/Mpc]
+  [022] logkmg           = -1.3010299956639813
+  [023] mnu              = 0.0  # Sum of neutrino masses [eV] (if used)
+  [024] ns               = 0.962  # Scalar spectral index (tilt of primordial spectrum)  | used: power spectrum shape (CAMB) and spline_pk_nobao
+  [025] omega_HI_0       = 0.000486  # Present-day HI density fraction ΩHI  | used: baofisher.Tb / IM signal amplitude
+  [026] omega_M_0        = 0.316  # Present-day total matter density fraction Ωm  | used: baofisher.background_evolution_splines (E(z), distances)
+  [027] omega_b_0        = 0.049  # Present-day baryon density fraction Ωb  | used: power spectrum generation (CAMB) and transfer function
+  [028] omega_lambda_0   = 0.684  # Present-day dark energy density fraction ΩΛ  | used: baofisher.background_evolution_splines (E(z), distances)
+  [029] sigma_8          = 0.834  # RMS linear matter fluctuation at 8 h⁻¹ Mpc  | used: power spectrum normalization (CAMB As rescale)
+  [030] sigma_nl         = 7.0  # Nonlinear BAO damping scale (smooths BAO wiggles)  | used: baofisher.spline_pk_nobao / BAO damping model
+  [031] w0               = -1.0  # Dark energy equation of state at a=1  | used: baofisher.background_evolution_splines (E(z))
+  [032] wa               = 0.0  # Dark energy evolution parameter (CPL)  | used: baofisher.background_evolution_splines (E(z))
+
+
+=== Experiment: SKA1MIDbase1 (from experiments.py) ===
+
+[Mode]
+  mode : dish  # Observation mode: dish/interferom/combined
+
+[Array/Beams]
+  Ddish : 15.0  # Dish diameter [m]  | used: baofisher.noise_rms_per_voxel (beam) and interferometer_response (FoV)
+  Nbeam : 1  # Number of beams / feeds  | used: baofisher.noise_rms_per_voxel (multiplicity)
+  Ndish : 190  # Number of dishes  | used: baofisher.noise_rms_per_voxel and interferometer_response (multiplicity)
+
+[Receiver]
+  Tinst : 28000.0  # Instrument/system temperature [mK]  | used: baofisher.noise_rms_per_voxel* (Tsys = Tinst + Tsky)
+
+[Frequency]
+  dnu           : 0.1  # Channel width [MHz]  | used: baofisher.noise_rms_per_voxel* (thermal noise per voxel)
+  nu_line       : 1420.406  # Rest-frame 21cm line frequency [MHz]  | used: baofisher.zbins_* and noise/beam conversions (ν(z))
+  survey_dnutot : 700.0  # Total survey bandwidth [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  survey_numax  : 1050.0  # Maximum observing frequency [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+
+[Survey]
+  Sarea : 7.615435494668717  # Survey area [sr]  | used: baofisher.noise_rms_per_voxel* and survey volume/mode-counting
+  ttot  : 36000000000000.0  # Total integration time (converted to internal units)  | used: baofisher.noise_rms_per_voxel* (thermal noise)
+
+[Foreground/Nonlinear]
+  epsilon_fg : 1e-06  # Foreground subtraction residual amplitude  | used: baofisher.foreground_residual (adds residual covariance)
+  k_nl0      : 0.14  # Nonlinear scale at z=0 used to set kmax  | used: baofisher.fisher (sets kmax via nonlinear scale)
+
+[InterferometerDensity]
+  n(x) : array_config/nx_SKAM190_dec30.dat  # Baseline/antenna density file for interferometer sensitivity  | used: baofisher.interferometer_response (baseline density n(u))
+
+[Overlap]
+  (none)
+
+[UseFlags]
+  use : {'f_rsd': True, 'f_growthfactor': True, 'alpha_all': True, 'alpha_volume': False, 'alpha_rsd_angle': False, 'alpha_rsd_shift': False, 'alpha_bao_shift': True, 'alpha_pk_shift': False}  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+
+[Experiment inputs (indexed)]
+  [001] Ddish               = 15.0  # Dish diameter [m]  | used: baofisher.noise_rms_per_voxel (beam) and interferometer_response (FoV)
+  [002] Nbeam               = 1  # Number of beams / feeds  | used: baofisher.noise_rms_per_voxel (multiplicity)
+  [003] Ndish               = 190  # Number of dishes  | used: baofisher.noise_rms_per_voxel and interferometer_response (multiplicity)
+  [004] Sarea               = 7.615435494668717  # Survey area [sr]  | used: baofisher.noise_rms_per_voxel* and survey volume/mode-counting
+  [005] Tinst               = 28000.0  # Instrument/system temperature [mK]  | used: baofisher.noise_rms_per_voxel* (Tsys = Tinst + Tsky)
+  [006] dnu                 = 0.1  # Channel width [MHz]  | used: baofisher.noise_rms_per_voxel* (thermal noise per voxel)
+  [007] epsilon_fg          = 1e-06  # Foreground subtraction residual amplitude  | used: baofisher.foreground_residual (adds residual covariance)
+  [008] k_nl0               = 0.14  # Nonlinear scale at z=0 used to set kmax  | used: baofisher.fisher (sets kmax via nonlinear scale)
+  [009] mode                = dish  # Observation mode: dish/interferom/combined
+  [010] n(x)                = array_config/nx_SKAM190_dec30.dat  # Baseline/antenna density file for interferometer sensitivity  | used: baofisher.interferometer_response (baseline density n(u))
+  [011] nu_line             = 1420.406  # Rest-frame 21cm line frequency [MHz]  | used: baofisher.zbins_* and noise/beam conversions (ν(z))
+  [012] survey_dnutot       = 700.0  # Total survey bandwidth [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  [013] survey_numax        = 1050.0  # Maximum observing frequency [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  [014] ttot                = 36000000000000.0  # Total integration time (converted to internal units)  | used: baofisher.noise_rms_per_voxel* (thermal noise)
+  [015] use.alpha_all       = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [016] use.alpha_bao_shift = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [017] use.alpha_pk_shift  = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [018] use.alpha_rsd_angle = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [019] use.alpha_rsd_shift = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [020] use.alpha_volume    = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [021] use.f_growthfactor  = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [022] use.f_rsd           = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+
+=== Data files ===
+n(x) file: /home/liuhk/bao21cm-master/bao21cm-master/array_config/nx_SKAM190_dec30.dat  # Baseline/antenna density file for interferometer sensitivity
+exists : True
+
+--- head -n 5 /home/liuhk/bao21cm-master/bao21cm-master/array_config/nx_SKAM190_dec30.dat ---
+3.261144827586206357e-02 1.117394997477807919e+03
+4.348193275862068802e-02 1.187621854176019497e+03
+5.435241551724138281e-02 1.276149848937235674e+03
+6.522289827586207067e-02 1.350133624069212829e+03
+7.609338103448275159e-02 1.383337469718871034e+03
+
+cache_pk: /home/liuhk/bao21cm-master/bao21cm-master/cache_pk.dat (exists=True)  # Matter power spectrum cache file (k, P(k))
+
+=== Effective experiment in bin z=[0.9,1.1] ===
+
+[Mode]
+  mode : dish  # Observation mode: dish/interferom/combined
+
+[Array/Beams]
+  Ddish : 15.0  # Dish diameter [m]  | used: baofisher.noise_rms_per_voxel (beam) and interferometer_response (FoV)
+  Nbeam : 1  # Number of beams / feeds  | used: baofisher.noise_rms_per_voxel (multiplicity)
+  Ndish : 190  # Number of dishes  | used: baofisher.noise_rms_per_voxel and interferometer_response (multiplicity)
+
+[Receiver]
+  Tinst : 28000.0  # Instrument/system temperature [mK]  | used: baofisher.noise_rms_per_voxel* (Tsys = Tinst + Tsky)
+
+[Frequency]
+  dnu           : 0.1  # Channel width [MHz]  | used: baofisher.noise_rms_per_voxel* (thermal noise per voxel)
+  nu_line       : 1420.406  # Rest-frame 21cm line frequency [MHz]  | used: baofisher.zbins_* and noise/beam conversions (ν(z))
+  survey_dnutot : 700.0  # Total survey bandwidth [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  survey_numax  : 1050.0  # Maximum observing frequency [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+
+[Survey]
+  Sarea : 7.615435494668717  # Survey area [sr]  | used: baofisher.noise_rms_per_voxel* and survey volume/mode-counting
+  ttot  : 36000000000000.0  # Total integration time (converted to internal units)  | used: baofisher.noise_rms_per_voxel* (thermal noise)
+
+[Foreground/Nonlinear]
+  epsilon_fg : 1e-06  # Foreground subtraction residual amplitude  | used: baofisher.foreground_residual (adds residual covariance)
+  k_nl0      : 0.14  # Nonlinear scale at z=0 used to set kmax  | used: baofisher.fisher (sets kmax via nonlinear scale)
+
+[InterferometerDensity]
+  n(x) : array_config/nx_SKAM190_dec30.dat  # Baseline/antenna density file for interferometer sensitivity  | used: baofisher.interferometer_response (baseline density n(u))
+
+[Overlap]
+  (none)
+
+[UseFlags]
+  use : {'f_rsd': True, 'f_growthfactor': True, 'alpha_all': True, 'alpha_volume': False, 'alpha_rsd_angle': False, 'alpha_rsd_shift': False, 'alpha_bao_shift': True, 'alpha_pk_shift': False}  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+
+[Effective experiment (indexed)]
+  [001] Ddish               = 15.0  # Dish diameter [m]  | used: baofisher.noise_rms_per_voxel (beam) and interferometer_response (FoV)
+  [002] Nbeam               = 1  # Number of beams / feeds  | used: baofisher.noise_rms_per_voxel (multiplicity)
+  [003] Ndish               = 190  # Number of dishes  | used: baofisher.noise_rms_per_voxel and interferometer_response (multiplicity)
+  [004] Sarea               = 7.615435494668717  # Survey area [sr]  | used: baofisher.noise_rms_per_voxel* and survey volume/mode-counting
+  [005] Tinst               = 28000.0  # Instrument/system temperature [mK]  | used: baofisher.noise_rms_per_voxel* (Tsys = Tinst + Tsky)
+  [006] dnu                 = 0.1  # Channel width [MHz]  | used: baofisher.noise_rms_per_voxel* (thermal noise per voxel)
+  [007] epsilon_fg          = 1e-06  # Foreground subtraction residual amplitude  | used: baofisher.foreground_residual (adds residual covariance)
+  [008] k_nl0               = 0.14  # Nonlinear scale at z=0 used to set kmax  | used: baofisher.fisher (sets kmax via nonlinear scale)
+  [009] mode                = dish  # Observation mode: dish/interferom/combined
+  [010] n(x)                = array_config/nx_SKAM190_dec30.dat  # Baseline/antenna density file for interferometer sensitivity  | used: baofisher.interferometer_response (baseline density n(u))
+  [011] nu_line             = 1420.406  # Rest-frame 21cm line frequency [MHz]  | used: baofisher.zbins_* and noise/beam conversions (ν(z))
+  [012] survey_dnutot       = 700.0  # Total survey bandwidth [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  [013] survey_numax        = 1050.0  # Maximum observing frequency [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  [014] ttot                = 36000000000000.0  # Total integration time (converted to internal units)  | used: baofisher.noise_rms_per_voxel* (thermal noise)
+  [015] use.alpha_all       = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [016] use.alpha_bao_shift = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [017] use.alpha_pk_shift  = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [018] use.alpha_rsd_angle = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [019] use.alpha_rsd_shift = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [020] use.alpha_volume    = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [021] use.f_growthfactor  = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [022] use.f_rsd           = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+
+
+=== Experiment: SKA1MIDbase2 (from experiments.py) ===
+
+[Mode]
+  mode : dish  # Observation mode: dish/interferom/combined
+
+[Array/Beams]
+  Ddish : 15.0  # Dish diameter [m]  | used: baofisher.noise_rms_per_voxel (beam) and interferometer_response (FoV)
+  Nbeam : 1  # Number of beams / feeds  | used: baofisher.noise_rms_per_voxel (multiplicity)
+  Ndish : 190  # Number of dishes  | used: baofisher.noise_rms_per_voxel and interferometer_response (multiplicity)
+
+[Receiver]
+  Tinst : 20000.0  # Instrument/system temperature [mK]  | used: baofisher.noise_rms_per_voxel* (Tsys = Tinst + Tsky)
+
+[Frequency]
+  dnu           : 0.1  # Channel width [MHz]  | used: baofisher.noise_rms_per_voxel* (thermal noise per voxel)
+  nu_line       : 1420.406  # Rest-frame 21cm line frequency [MHz]  | used: baofisher.zbins_* and noise/beam conversions (ν(z))
+  survey_dnutot : 470.0  # Total survey bandwidth [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  survey_numax  : 1420.0  # Maximum observing frequency [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+
+[Survey]
+  Sarea : 7.615435494668717  # Survey area [sr]  | used: baofisher.noise_rms_per_voxel* and survey volume/mode-counting
+  ttot  : 36000000000000.0  # Total integration time (converted to internal units)  | used: baofisher.noise_rms_per_voxel* (thermal noise)
+
+[Foreground/Nonlinear]
+  epsilon_fg : 1e-06  # Foreground subtraction residual amplitude  | used: baofisher.foreground_residual (adds residual covariance)
+  k_nl0      : 0.14  # Nonlinear scale at z=0 used to set kmax  | used: baofisher.fisher (sets kmax via nonlinear scale)
+
+[InterferometerDensity]
+  n(x) : array_config/nx_SKAM190_dec30.dat  # Baseline/antenna density file for interferometer sensitivity  | used: baofisher.interferometer_response (baseline density n(u))
+
+[Overlap]
+  (none)
+
+[UseFlags]
+  use : {'f_rsd': True, 'f_growthfactor': True, 'alpha_all': True, 'alpha_volume': False, 'alpha_rsd_angle': False, 'alpha_rsd_shift': False, 'alpha_bao_shift': True, 'alpha_pk_shift': False}  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+
+[Experiment inputs (indexed)]
+  [001] Ddish               = 15.0  # Dish diameter [m]  | used: baofisher.noise_rms_per_voxel (beam) and interferometer_response (FoV)
+  [002] Nbeam               = 1  # Number of beams / feeds  | used: baofisher.noise_rms_per_voxel (multiplicity)
+  [003] Ndish               = 190  # Number of dishes  | used: baofisher.noise_rms_per_voxel and interferometer_response (multiplicity)
+  [004] Sarea               = 7.615435494668717  # Survey area [sr]  | used: baofisher.noise_rms_per_voxel* and survey volume/mode-counting
+  [005] Tinst               = 20000.0  # Instrument/system temperature [mK]  | used: baofisher.noise_rms_per_voxel* (Tsys = Tinst + Tsky)
+  [006] dnu                 = 0.1  # Channel width [MHz]  | used: baofisher.noise_rms_per_voxel* (thermal noise per voxel)
+  [007] epsilon_fg          = 1e-06  # Foreground subtraction residual amplitude  | used: baofisher.foreground_residual (adds residual covariance)
+  [008] k_nl0               = 0.14  # Nonlinear scale at z=0 used to set kmax  | used: baofisher.fisher (sets kmax via nonlinear scale)
+  [009] mode                = dish  # Observation mode: dish/interferom/combined
+  [010] n(x)                = array_config/nx_SKAM190_dec30.dat  # Baseline/antenna density file for interferometer sensitivity  | used: baofisher.interferometer_response (baseline density n(u))
+  [011] nu_line             = 1420.406  # Rest-frame 21cm line frequency [MHz]  | used: baofisher.zbins_* and noise/beam conversions (ν(z))
+  [012] survey_dnutot       = 470.0  # Total survey bandwidth [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  [013] survey_numax        = 1420.0  # Maximum observing frequency [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  [014] ttot                = 36000000000000.0  # Total integration time (converted to internal units)  | used: baofisher.noise_rms_per_voxel* (thermal noise)
+  [015] use.alpha_all       = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [016] use.alpha_bao_shift = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [017] use.alpha_pk_shift  = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [018] use.alpha_rsd_angle = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [019] use.alpha_rsd_shift = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [020] use.alpha_volume    = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [021] use.f_growthfactor  = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [022] use.f_rsd           = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+
+=== Data files ===
+n(x) file: /home/liuhk/bao21cm-master/bao21cm-master/array_config/nx_SKAM190_dec30.dat  # Baseline/antenna density file for interferometer sensitivity
+exists : True
+
+--- head -n 5 /home/liuhk/bao21cm-master/bao21cm-master/array_config/nx_SKAM190_dec30.dat ---
+3.261144827586206357e-02 1.117394997477807919e+03
+4.348193275862068802e-02 1.187621854176019497e+03
+5.435241551724138281e-02 1.276149848937235674e+03
+6.522289827586207067e-02 1.350133624069212829e+03
+7.609338103448275159e-02 1.383337469718871034e+03
+
+cache_pk: /home/liuhk/bao21cm-master/bao21cm-master/cache_pk.dat (exists=True)  # Matter power spectrum cache file (k, P(k))
+
+=== Effective experiment in bin z=[0.9,1.1] ===
+
+[Mode]
+  mode : dish  # Observation mode: dish/interferom/combined
+
+[Array/Beams]
+  Ddish : 15.0  # Dish diameter [m]  | used: baofisher.noise_rms_per_voxel (beam) and interferometer_response (FoV)
+  Nbeam : 1  # Number of beams / feeds  | used: baofisher.noise_rms_per_voxel (multiplicity)
+  Ndish : 190  # Number of dishes  | used: baofisher.noise_rms_per_voxel and interferometer_response (multiplicity)
+
+[Receiver]
+  Tinst : 20000.0  # Instrument/system temperature [mK]  | used: baofisher.noise_rms_per_voxel* (Tsys = Tinst + Tsky)
+
+[Frequency]
+  dnu           : 0.1  # Channel width [MHz]  | used: baofisher.noise_rms_per_voxel* (thermal noise per voxel)
+  nu_line       : 1420.406  # Rest-frame 21cm line frequency [MHz]  | used: baofisher.zbins_* and noise/beam conversions (ν(z))
+  survey_dnutot : 470.0  # Total survey bandwidth [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  survey_numax  : 1420.0  # Maximum observing frequency [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+
+[Survey]
+  Sarea : 7.615435494668717  # Survey area [sr]  | used: baofisher.noise_rms_per_voxel* and survey volume/mode-counting
+  ttot  : 36000000000000.0  # Total integration time (converted to internal units)  | used: baofisher.noise_rms_per_voxel* (thermal noise)
+
+[Foreground/Nonlinear]
+  epsilon_fg : 1e-06  # Foreground subtraction residual amplitude  | used: baofisher.foreground_residual (adds residual covariance)
+  k_nl0      : 0.14  # Nonlinear scale at z=0 used to set kmax  | used: baofisher.fisher (sets kmax via nonlinear scale)
+
+[InterferometerDensity]
+  n(x) : array_config/nx_SKAM190_dec30.dat  # Baseline/antenna density file for interferometer sensitivity  | used: baofisher.interferometer_response (baseline density n(u))
+
+[Overlap]
+  (none)
+
+[UseFlags]
+  use : {'f_rsd': True, 'f_growthfactor': True, 'alpha_all': True, 'alpha_volume': False, 'alpha_rsd_angle': False, 'alpha_rsd_shift': False, 'alpha_bao_shift': True, 'alpha_pk_shift': False}  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+
+[Effective experiment (indexed)]
+  [001] Ddish               = 15.0  # Dish diameter [m]  | used: baofisher.noise_rms_per_voxel (beam) and interferometer_response (FoV)
+  [002] Nbeam               = 1  # Number of beams / feeds  | used: baofisher.noise_rms_per_voxel (multiplicity)
+  [003] Ndish               = 190  # Number of dishes  | used: baofisher.noise_rms_per_voxel and interferometer_response (multiplicity)
+  [004] Sarea               = 7.615435494668717  # Survey area [sr]  | used: baofisher.noise_rms_per_voxel* and survey volume/mode-counting
+  [005] Tinst               = 20000.0  # Instrument/system temperature [mK]  | used: baofisher.noise_rms_per_voxel* (Tsys = Tinst + Tsky)
+  [006] dnu                 = 0.1  # Channel width [MHz]  | used: baofisher.noise_rms_per_voxel* (thermal noise per voxel)
+  [007] epsilon_fg          = 1e-06  # Foreground subtraction residual amplitude  | used: baofisher.foreground_residual (adds residual covariance)
+  [008] k_nl0               = 0.14  # Nonlinear scale at z=0 used to set kmax  | used: baofisher.fisher (sets kmax via nonlinear scale)
+  [009] mode                = dish  # Observation mode: dish/interferom/combined
+  [010] n(x)                = array_config/nx_SKAM190_dec30.dat  # Baseline/antenna density file for interferometer sensitivity  | used: baofisher.interferometer_response (baseline density n(u))
+  [011] nu_line             = 1420.406  # Rest-frame 21cm line frequency [MHz]  | used: baofisher.zbins_* and noise/beam conversions (ν(z))
+  [012] survey_dnutot       = 470.0  # Total survey bandwidth [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  [013] survey_numax        = 1420.0  # Maximum observing frequency [MHz]  | used: baofisher.zbins_fixed/zbins_equal_spaced/zbins_const_dr (band edges)
+  [014] ttot                = 36000000000000.0  # Total integration time (converted to internal units)  | used: baofisher.noise_rms_per_voxel* (thermal noise)
+  [015] use.alpha_all       = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [016] use.alpha_bao_shift = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [017] use.alpha_pk_shift  = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [018] use.alpha_rsd_angle = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [019] use.alpha_rsd_shift = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [020] use.alpha_volume    = False  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [021] use.f_growthfactor  = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+  [022] use.f_rsd           = True  # Flags for which Fisher contributions are enabled  | used: baofisher.fisher (toggles which constraints enter)
+
+=== Fisher code global settings (radiofisher.baofisher) ===
+
+[Numerics]
+  NSAMP_K      : 500
+  NSAMP_U      : 1500
+  RSD_FUNCTION : kaiser
+  CAMB_KMAX    : 28.571428571428573
+  CAMB_EXEC    : /home/phil/oslo/bao21cm/camb

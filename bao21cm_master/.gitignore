@@ -1,0 +1,13 @@
+*.png
+*.npy
+*.pyc
+*.pdf
+*.ipynb_checkpoints/
+__pycache__/
+*.bak
+old/
+old_code/
+paramfiles/
+transfer_bf_cache.dat
+camb_pk_nobao_cache.dat
+cache_pk.dat

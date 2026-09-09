@@ -4,7 +4,7 @@ bao21cm_master + 6.7-interferometer-telescopes-2 + fisher_1.3.2.1_DirctTF_GenNoi
 
 ## 仓库结构
 - 项目代码：`6.7-interferometer-telescopes-2.ipynb` — 多望远镜 21 cm IM+CM 联合约束 f_NL Fisher（解析 + mock）
-  - 噪声功率谱等函数调用了`baofisher_k.py`
+  - 噪声功率谱等函数调用了`baofisher_k.py`。备注：`baofisher_k.py`在原来代码`baofisher.py`的基础上只修改了尺度k的上下限
   - 望远镜配置来自`experiments.py`
   - 栾天成模拟的mock方差数据来自`fisher_1.3.2.1_DirctTF_GenNoise_AssisHKL_Tutorial.ipynb`
 - `bao21cm_master/` — baofisher 21 cm intensity-mapping Fisher forecast 代码库

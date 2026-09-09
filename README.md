@@ -14,4 +14,4 @@ bao21cm_master + 6.7-interferometer-telescopes-2 + fisher_1.3.2.1_DirctTF_GenNoi
 - `fisher_1.3.2.1_DirctTF_GenNoise_AssisHKL_Tutorial.ipynb` — 栾天成模拟的mock方差数据
 
 ## 使用
-详见 `bao21cm_master/README`、`bao21cm_master/REPRODUCE_PAPER.sh`；notebook 内注释含关键物理参数与推导。
+详见 `MEMO_6.7_interferometer_fNL_forecast.md`、`bao21cm_master/README`、`bao21cm_master/REPRODUCE_PAPER.sh`；notebook 内注释含关键物理参数与推导。

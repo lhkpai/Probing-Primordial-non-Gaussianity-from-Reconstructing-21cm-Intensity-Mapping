@@ -39,7 +39,8 @@ FIDUCIAL = dict(lnA=float(np.log(2.1e-9)), Omega_m=.3153, omega_b=.02237,
 @dataclass(frozen=True)
 class Config:
     delta_z: float = .05
-    kmax: float = .535                 # Total k, not two independent component caps.
+    kmax: float = .535                 # Fisher total-k cutoff.
+    voxel_kmax: float = .363           # Independent total-k cutoff for voxel noise.
     t_obs_hours: float = 100000.
     boxsize_mpc_h: float = 3000.
     grid_size: int = 512               # Defines voxel averaging width, not a k cutoff.
@@ -56,7 +57,7 @@ class Config:
     output_dir: str = str(ROOT / "outputs_916")
 
     def __post_init__(self):
-        if min(self.delta_z, self.kmax, self.t_obs_hours, self.h_mock) <= 0:
+        if min(self.delta_z, self.kmax, self.voxel_kmax, self.t_obs_hours, self.h_mock) <= 0:
             raise ValueError("Bin width, kmax, time and h_mock must be positive.")
         if min(self.n_perp, self.n_parallel, self.n_z, self.pk_nodes) < 1:
             raise ValueError("Quadrature sizes must be positive.")
@@ -305,6 +306,8 @@ def noise_power(p, ell, geom, e):
 
 
 def voxel_variance(integrator, e, geom):
+    # Keep the voxel cutoff independent of the Fisher experiment settings.
+    e = dict(e, kmax=integrator.kmax)
     kfg, _ = bf.noise_k_limits(geom, e)
     p = integrator.k_perp
     # Evaluate on the first retained lattice plane, away from a roundoff-prone
@@ -407,7 +410,7 @@ def run_survey(name, cfg, models, integrator, mock):
             lower, upper = transverse_bounds(e, representative)
             kfg, _ = bf.noise_k_limits(representative, e)
             row.update(kperp_min_envelope_Mpc_inv=lower,
-                       kperp_max_envelope_Mpc_inv=min(upper,np.sqrt(cfg.kmax**2-kfg**2)),
+                       kperp_max_envelope_Mpc_inv=min(upper,np.sqrt(max(0.,cfg.voxel_kmax**2-kfg**2))),
                        kpar_min_Mpc_inv=kfg,
                        kpar_min_lattice_Mpc_inv=np.ceil(kfg/integrator.fundamental_k)*integrator.fundamental_k)
             # Clip the redshift integration to data support, never clip a query
@@ -426,7 +429,7 @@ def run_survey(name, cfg, models, integrator, mock):
         if index % 10 == 0 or index == len(edges)-2:
             print(f"[{name}] bin {index+1}/{len(edges)-1}: {row['status']}", flush=True)
     frame = pd.DataFrame(rows)
-    frame["k_max_Mpc_inv"] = cfg.kmax
+    frame["k_max_Mpc_inv"] = cfg.voxel_kmax
     frame["voxel_side_Mpc"] = cfg.boxsize_mpc_h/cfg.grid_size/cfg.h_mock
     frame["t_obs_hours"] = cfg.t_obs_hours
     frame["baseline_source"] = e["baseline_source"]
@@ -467,7 +470,7 @@ def run_survey(name, cfg, models, integrator, mock):
 def run_all(cfg=None, surveys=None):
     cfg = cfg or Config()
     surveys = SURVEYS if surveys is None else surveys
-    integrator = FiniteBoxVoxelIntegrator(cfg.boxsize_mpc_h,cfg.grid_size,cfg.h_mock,cfg.kmax)
+    integrator = FiniteBoxVoxelIntegrator(cfg.boxsize_mpc_h,cfg.grid_size,cfg.h_mock,cfg.voxel_kmax)
     mock = MockVariance(cfg) if cfg.run_fisher else None
     models = SignalModels(cfg)
     try:

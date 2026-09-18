@@ -90,7 +90,7 @@ class FiniteBoxVoxelIntegrator:
         boxsize_mpc_h=3000.0,
         grid_size=512,
         h_mock=0.6766,
-        kmax=0.535,
+        kmax=0.363,
     ):
         if not all(np.isfinite(v) and v > 0 for v in (boxsize_mpc_h, h_mock, kmax)):
             raise ValueError("Box length, h_mock and kmax must be finite and positive.")

@@ -1,0 +1,53 @@
+{
+  "delta_z": 0.01,
+  "voxel_kmax": 0.363,
+  "fisher_kmax": 0.535,
+  "other_parameters_unchanged": true,
+  "total_rows": 988,
+  "valid_rows": 843,
+  "out_of_band_rows": 145,
+  "notebook_errors": 0,
+  "notebook_execution_seconds": 599.8,
+  "surveys": [
+    {
+      "telescope": "ska_mid1_interferom",
+      "bins": 300,
+      "valid_bins": 271,
+      "fnl_ana_common": 40.42235891245761,
+      "fnl_ana_mock": 40.42240807913676,
+      "fnl_relative_change_from_dz005": -0.016708839827465405
+    },
+    {
+      "telescope": "chime_icyl",
+      "bins": 207,
+      "valid_bins": 178,
+      "fnl_ana_common": 10.128283274589323,
+      "fnl_ana_mock": 10.128618279728231,
+      "fnl_relative_change_from_dz005": -4.2229291541406866e-07
+    },
+    {
+      "telescope": "hirax_interferom",
+      "bins": 207,
+      "valid_bins": 178,
+      "fnl_ana_common": 8.809878814358493,
+      "fnl_ana_mock": 8.810118968951846,
+      "fnl_relative_change_from_dz005": -5.358595686066892e-07
+    },
+    {
+      "telescope": "tianlai_icyl",
+      "bins": 139,
+      "valid_bins": 110,
+      "fnl_ana_common": 27.198646807607638,
+      "fnl_ana_mock": 27.20097290602509,
+      "fnl_relative_change_from_dz005": 3.6527612290448985e-07
+    },
+    {
+      "telescope": "meerkat_b1_interferom",
+      "bins": 135,
+      "valid_bins": 106,
+      "fnl_ana_common": 458.75726209711866,
+      "fnl_ana_mock": 458.7587956717915,
+      "fnl_relative_change_from_dz005": -8.152428937369116e-06
+    }
+  ]
+}

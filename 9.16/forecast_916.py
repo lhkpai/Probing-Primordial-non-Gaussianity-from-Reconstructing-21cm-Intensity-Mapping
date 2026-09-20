@@ -38,7 +38,7 @@ FIDUCIAL = dict(lnA=float(np.log(2.1e-9)), Omega_m=.3153, omega_b=.02237,
 
 @dataclass(frozen=True)
 class Config:
-    delta_z: float = .05
+    delta_z: float = .01
     kmax: float = .535                 # Fisher total-k cutoff.
     voxel_kmax: float = .363           # Independent total-k cutoff for voxel noise.
     t_obs_hours: float = 100000.

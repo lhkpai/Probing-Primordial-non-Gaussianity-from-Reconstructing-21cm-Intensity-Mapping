@@ -1,0 +1,25 @@
+{
+  "delta_z": 0.01,
+  "kmax": 0.535,
+  "voxel_kmax": 0.363,
+  "t_obs_hours": 100000.0,
+  "boxsize_mpc_h": 3000.0,
+  "grid_size": 512,
+  "h_mock": 0.6766,
+  "n_perp": 96,
+  "n_parallel": 64,
+  "n_z": 2,
+  "pk_nodes": 900,
+  "run_fisher": true,
+  "mock_file": "/home/liuhk/research/mock_fisher_arr.joblib",
+  "mock_k_unit": "h/Mpc",
+  "mock_redshifts": [
+    0.511,
+    0.989,
+    1.501,
+    2.005,
+    2.501,
+    3.017
+  ],
+  "output_dir": "/home/liuhk/research/outputs_916"
+}

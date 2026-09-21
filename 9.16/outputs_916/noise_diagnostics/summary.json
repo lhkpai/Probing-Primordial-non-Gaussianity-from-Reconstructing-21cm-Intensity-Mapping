@@ -1,0 +1,258 @@
+{
+  "configuration": {
+    "delta_z": 0.01,
+    "kmax": 0.363
+  },
+  "interpretation": "minimum retained total k at each z plus an increment, in Mpc^-1",
+  "baseline_csv_reproduced": true,
+  "radial_sum_bruteforce_passed": true,
+  "smoothness": [
+    {
+      "telescope": "ska_mid1_interferom",
+      "largest_transition": {
+        "entered_mK2": 0.0015754358410062755,
+        "exited_mK2": 0.0,
+        "density_change_mK2": -0.0004538575097641622,
+        "other_response_change_mK2": 0.001721134314647238,
+        "entered_modes": 1882918.4234561007,
+        "exited_modes": 0.0,
+        "interpolation_groups_changed": 1833.0342019575419,
+        "parallel_floor_changed": 0.0,
+        "redshift_weight_change_mK2": -3.445089056636218e-07,
+        "telescope": "ska_mid1_interferom",
+        "z_before": 0.3650037837364613,
+        "z_after": 0.3750025448430996,
+        "variance_before": 0.022120927464400055,
+        "variance_after": 0.024963295601383745,
+        "relative_change": 0.12849226785621928,
+        "abs_log_ratio": 0.12088246555168725
+      },
+      "transitions_over_25_percent": 0
+    },
+    {
+      "telescope": "chime_icyl",
+      "largest_transition": {
+        "entered_mK2": 1.6212078703834523e-05,
+        "exited_mK2": 0.0017366040429862442,
+        "density_change_mK2": 0.048730816269780625,
+        "other_response_change_mK2": 0.0051220640686695535,
+        "entered_modes": 57226.57693699629,
+        "exited_modes": 13755.469316154356,
+        "interpolation_groups_changed": 15161.449682533235,
+        "parallel_floor_changed": 0.0,
+        "redshift_weight_change_mK2": -3.0923003506806264e-07,
+        "telescope": "chime_icyl",
+        "z_before": 1.267711675983733,
+        "z_after": 1.2777115916623916,
+        "variance_before": 0.1673521703820504,
+        "variance_after": 0.21948434952618312,
+        "relative_change": 0.31151181980562,
+        "abs_log_ratio": 0.2711805327169816
+      },
+      "transitions_over_25_percent": 1
+    },
+    {
+      "telescope": "hirax_interferom",
+      "largest_transition": {
+        "entered_mK2": 6.7130166799087325e-06,
+        "exited_mK2": 0.0,
+        "density_change_mK2": -0.00016907873167406267,
+        "other_response_change_mK2": 0.000578161165413901,
+        "entered_modes": 24288.332635643026,
+        "exited_modes": 0.0,
+        "interpolation_groups_changed": 0.0,
+        "parallel_floor_changed": 0.0,
+        "redshift_weight_change_mK2": -1.066120124212546e-08,
+        "telescope": "hirax_interferom",
+        "z_before": 0.7877189737980759,
+        "z_after": 0.7977187172086173,
+        "variance_before": 0.014662194751861495,
+        "variance_after": 0.01507797954108,
+        "relative_change": 0.02835760922939029,
+        "abs_log_ratio": 0.02796297544080109
+      },
+      "transitions_over_25_percent": 0
+    },
+    {
+      "telescope": "tianlai_icyl",
+      "largest_transition": {
+        "entered_mK2": 0.00031751921687424637,
+        "exited_mK2": 0.0,
+        "density_change_mK2": -1.078218136893126e-05,
+        "other_response_change_mK2": 2.7545320690890586e-05,
+        "entered_modes": 237148.49473382017,
+        "exited_modes": 0.0,
+        "interpolation_groups_changed": 11541.621047201457,
+        "parallel_floor_changed": 0.0,
+        "redshift_weight_change_mK2": -1.1698199862870317e-09,
+        "telescope": "tianlai_icyl",
+        "z_before": 0.7173777106206921,
+        "z_after": 0.7273773966837396,
+        "variance_before": 0.0005660322451866972,
+        "variance_after": 0.0009003134315629165,
+        "relative_change": 0.5905691578859819,
+        "abs_log_ratio": 0.4640919131139896
+      },
+      "transitions_over_25_percent": 3
+    },
+    {
+      "telescope": "meerkat_b1_interferom",
+      "largest_transition": {
+        "entered_mK2": 0.0016831024625082267,
+        "exited_mK2": 0.0,
+        "density_change_mK2": -0.0009060385409900667,
+        "other_response_change_mK2": 0.0032648325688229927,
+        "entered_modes": 1327077.4480478363,
+        "exited_modes": 0.0,
+        "interpolation_groups_changed": 2741.9359292835607,
+        "parallel_floor_changed": 1.0,
+        "redshift_weight_change_mK2": -3.1794247496475663e-07,
+        "telescope": "meerkat_b1_interferom",
+        "z_before": 0.4316437701221758,
+        "z_after": 0.4416428811779503,
+        "variance_before": 0.04839191199426142,
+        "variance_after": 0.052433490542127606,
+        "relative_change": 0.08351764543515991,
+        "abs_log_ratio": 0.08021282745018647
+      },
+      "transitions_over_25_percent": 0
+    }
+  ],
+  "k_floor": [
+    {
+      "telescope": "ska_mid1_interferom",
+      "increment": 0.01,
+      "minimum": 0.9809026246351923,
+      "median": 0.9995139881428222,
+      "maximum": 0.9998864463365557,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "ska_mid1_interferom",
+      "increment": 0.02,
+      "minimum": 0.945026752663385,
+      "median": 0.9983818788836084,
+      "maximum": 0.9995517838494518,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "ska_mid1_interferom",
+      "increment": 0.03,
+      "minimum": 0.8979060862155098,
+      "median": 0.9965027471548984,
+      "maximum": 0.9989016843966728,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "chime_icyl",
+      "increment": 0.01,
+      "minimum": 0.9918989389424819,
+      "median": 0.9999853759802377,
+      "maximum": 0.9999889594300427,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "chime_icyl",
+      "increment": 0.02,
+      "minimum": 0.9864822486012438,
+      "median": 0.9999301112853041,
+      "maximum": 0.9999468809911721,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "chime_icyl",
+      "increment": 0.03,
+      "minimum": 0.9795708606709805,
+      "median": 0.9997955302033973,
+      "maximum": 0.9998525757785107,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "hirax_interferom",
+      "increment": 0.01,
+      "minimum": 0.9992809553955961,
+      "median": 0.9997746697891158,
+      "maximum": 0.999837781352659,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "hirax_interferom",
+      "increment": 0.02,
+      "minimum": 0.9975216766655866,
+      "median": 0.9990690340877972,
+      "maximum": 0.9992679950327632,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "hirax_interferom",
+      "increment": 0.03,
+      "minimum": 0.9946274703949947,
+      "median": 0.9976989672529071,
+      "maximum": 0.9980983970097693,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "tianlai_icyl",
+      "increment": 0.01,
+      "minimum": 0.9450561627968803,
+      "median": 0.9989576672178224,
+      "maximum": 0.9999609709318136,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "tianlai_icyl",
+      "increment": 0.02,
+      "minimum": 0.9185976941585036,
+      "median": 0.9974838298026734,
+      "maximum": 0.9998374827348224,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "tianlai_icyl",
+      "increment": 0.03,
+      "minimum": 0.8964496886332327,
+      "median": 0.9948019439312519,
+      "maximum": 0.9995645556967241,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "meerkat_b1_interferom",
+      "increment": 0.01,
+      "minimum": 0.990253516911527,
+      "median": 0.9983078440393282,
+      "maximum": 0.9993479987529023,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "meerkat_b1_interferom",
+      "increment": 0.02,
+      "minimum": 0.9713653188399574,
+      "median": 0.9946966460541395,
+      "maximum": 0.9977834893112173,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    },
+    {
+      "telescope": "meerkat_b1_interferom",
+      "increment": 0.03,
+      "minimum": 0.9461221669104778,
+      "median": 0.9892763249275334,
+      "maximum": 0.9952083934071095,
+      "empty_bins": 0,
+      "partly_empty_bins": 0
+    }
+  ]
+}

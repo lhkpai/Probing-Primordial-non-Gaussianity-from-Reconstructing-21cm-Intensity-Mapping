@@ -7,17 +7,17 @@ The baseline is the existing finite-box sum, not a different FFT-grid estimator.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
+import forecast_916 as forecast
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
-import forecast_916 as forecast
 from voxel_modes_916 import FiniteBoxVoxelIntegrator
 
 
@@ -270,8 +270,26 @@ def figure_notes(smooth, cuts, jumps, fine):
         return "—" if not np.isfinite(value) else f"{value:.{digits}g}"
 
     lines = ["## 图 `noise_z_k_diagnostics.png` 读法", "",
-             "该图由 `plots()` 生成：5 行 = 仪器，3 列 = 三种问法。",
-             "纵轴单位是 mK²（体素热噪声方差，不含信号）。", "",
+             "### 1. 三栏画的是同一个量", "",
+             "该图由 `plots()` 生成：5 行 = 仪器，3 列 = 三种问法，三栏是同一个物理量的不同侧面。",
+             "纵横单位是 mK²（体素热噪声方差，**不含信号**）。", "",
+             "左、中栏的纵轴由 `integrate()` 给出：", "",
+             "```",
+             "σ_N²(z) = (1/V_box) · Σ_k  P_N(k) · W_⊥(k_⊥)² · W_∥(k_∥)²",
+             "```",
+             "",
+             "求和范围是该仪器在该红移**实际保留的离散 Fourier 模式**：总波数 ≤ k_max、",
+             "前景楔/视向下限之上（下限记为 k_min(z)）、k_⊥ 在 FOV 与 Nyquist 以内；",
+             "W_⊥、W_∥ 是 transverse_window_sum 与 longitudinal_window（体素 sinc 窗口）。",
+             "换句话说，它是热噪声功率谱 P_N 的**实空间对应物**：单个体素里噪声的方差。", "",
+             "P_N 本身来自 `baofisher_k.Cnoise`，其中对基线密度的依赖是", "",
+             "```",
+             "σ_T² = T_sys² · S_area / (Δν · t_tot · n(u)) · FOV²,   代码里 return invbeam2/n_u",
+             "```",
+             "即 **P_N ∝ 1/n(u)**（n(u) = 基线密度，只保留径向平均）。第 4 节的尖峰异常就是这一条造成的。", "",
+             "**它为什么要紧**：Fisher forecast 里噪声以 (P_s+P_N) 进分母（见 `fisher_at_z` 的 `denom`），",
+             "所以这数量级直接决定 σ(f_NL) 的可信区间宽度。这张图是噪声侧的可信度体检，不是结果本身。", "",
+             "### 2. 三栏各回答什么", "",
              "|栏|代码入口|这一栏问什么|怎么读|",
              "|---|---|---|---|",
              "|左：Voxel variance|`integrate(s)`|单个体素热噪声方差随 z 的绝对量级|"
@@ -282,17 +300,28 @@ def figure_notes(smooth, cuts, jumps, fine):
              "在掩码下限 k_min(z) 之上再抬高 Δ 能删掉多少方差|"
              "高 = 噪声集中在最低 k；贴 0 = 砍低 k 无用|",
              "",
-             "判据是邻点突起比 = 细采样点方差 ÷ 两侧点均值；1.25 只用于筛查，不是物理判据。", "",
-             "### 本图要点", "",
+             "中栏的判据是**邻点突起比** = 细采样点方差 ÷ 两侧点均值（`report` 在简要结论里逐仪器给出）。",
+             "阈值 1.25 只用于筛查，**不是物理突变判据**。", "",
+             "### 3. 左栏：绝对量级", "",
+             "这一栏只回答「量级对不对」。曲线随 z 上升是这批仪器的共同行为，成因是多个因子叠加",
+             "（观测频率下降使系统温度上升、固定物理基线对应的 u 覆盖随 z 平移、体素对应的共动体积变化）；",
+             "本脚本不把噪声拆解到这一层，因此左栏**不作为物理结论**，只用来对照仪器间的相对优劣与量级。", "",
+             "### 4. 中栏：可信度检查（最关键的一栏）", "",
+             "`plots()` 先取该仪器相邻箱变化最大的区间，再用 81 个点细采样放大 2 个箱宽。",
+             "物理趋势在 10 倍加密下应当保持平滑；只有数值假象才会表现为孤立尖刺。", "",
              "|仪器|最大相邻箱变化|邻点突起比|判读|",
              "|---|---:|---:|---|"]
+    ratios = {}
     for name, d in jumps.groupby("telescope", sort=False):
         q = d.loc[d.abs_log_ratio.idxmax()]
         v = fine.loc[fine.telescope == name, "variance_mK2"].to_numpy()
         ratio = float(np.max(v[1:-1]/((v[:-2]+v[2:])/2)))
+        ratios[name] = ratio
         verdict = "有局部尖峰：数值伪影，不代表物理" if ratio > 1.25 else "平滑，真实趋势"
         lines.append(f"|{name}|{100*q.relative_change:+.2f}%"
                      f"（z={q.z_before:.6f}→{q.z_after:.6f}）|{ratio:.3f}|{verdict}|")
+    worst_name, worst_ratio = ((max(ratios.items(), key=lambda kv: kv[1]))
+                               if ratios else ("—", float("nan")))
     hotspots, hot_total = [], 0
     for name, d in fine.groupby("telescope", sort=False):
         d = d.sort_values("z")
@@ -302,23 +331,34 @@ def figure_notes(smooth, cuts, jumps, fine):
         hot_total += len(hot)
         reference = float(quiet.peak_density.median())
         hotspots += [f"|{name}|{r.z:.6f}|{r.variance_mK2:.4g}|{r.peak_kperp:.6f}"
-                     f"|{fmt(r.peak_density)}|{fmt(reference)}"
+                     f"|{fmt(r.peak_density)}|{fmt(reference)}|{fmt(reference/r.peak_density, 3)}"
                      f"|{fmt(r.peak_zero_edge_gap)}|{100*r.peak_group_fraction:.1f}%|"
                      for r in hot.itertuples(index=False)]
     if hotspots:
-        lines += ["", f"细采样中出现 {hot_total} 个「单组贡献 >10%」的尖峰，全部伴随基线密度塌缩：", "",
-                  "|仪器|z|方差 [mK²]|k_perp [Mpc⁻¹]|该组 n(u)|该仪器非热点中位 n(u)"
+        lines += ["", f"判读依据：细采样共采到 {hot_total} 个「单组贡献 >10%」的尖峰：", "",
+                  "|仪器|z|方差 [mK²]|k_perp [Mpc⁻¹]|该组 n(u)|该仪器非热点中位 n(u)|密度塌缩倍数"
                   "|距密度零点边缘 [Mpc⁻¹]|单组贡献|",
-                  "|---|---:|---:|---:|---:|---:|---:|---:|", *hotspots, "",
-                  "机制：分段线性基线 n(u) 可在若干 x 处取到 0；随 z 变化，固定的离散 k_perp 组沿 n(u) 滑动，",
-                  "落到零点边缘时 `Cnoise` 的 1/n(u) 被放大。这是插值伪影，不是仪器物理。"]
+                  "|---|---:|---:|---:|---:|---:|---:|---:|---:|", *hotspots, "",
+                  "这些尖峰全部落在基线密度的零边缘上，机制是：", "",
+                  "1. `snapshot()` 里的 density = n(x)/ν² 来自**分段线性**插值，可在若干 x 处取到 0；",
+                  "2. 随 z 变化，固定的离散 k_⊥ 组沿 n(u) 曲线滑动（波长与共动距离同时改变）；",
+                  "3. 某个组滑到零点边缘时密度塌缩若干数量级，而 `Cnoise` 的 1/n(u) 被同比例放大；",
+                  "4. 该组通常包含大量简并 Fourier 模式，于是整体体素方差出现孤立尖刺。", "",
+                  "两点提醒：其一，这是**插值伪影，不是仪器物理**；其二，中栏只放大了最大变化区间，",
+                  "因此本表只覆盖被采到的尖峰，不能据此断言其它红移箱没有同类问题。"]
     else:
-        lines += ["", "细采样中未出现「单组贡献 >10%」的尖峰。"]
+        lines += ["", "细采样中未出现「单组贡献 >10%」的尖峰，最大箱变化可由平滑趋势解释。"]
     largest = float(cuts.increment_Mpc_inv.max())
-    lines += ["", "### 右栏的 z 依赖", "",
-              f"取最大测试增量 +{largest:g} Mpc⁻¹，按 z 的低/高四分位各取降幅中位数：",
-              "低 z 时保留带 [k_min, k_max] 较窄且方差偏带下沿，抬高下限能咬下可观份额；",
-              "高 z 时方差向带的高端集中，低 k 下限几乎无效。", "",
+    lines += ["", "### 5. 右栏：噪声来自哪些模式", "",
+              "曲线 = 在仪器原有的掩码下限 k_min(z) 之上**再抬高** Δ 后，被删掉的方差占比",
+              "（`integrate(s, s.k_min+Δ)`；代码里画的是 100*(1-variance_ratio)）。",
+              "它回答的问题是：「k_min 附近那一小撮最低波数模式，在总噪声里占多少权重」。", "",
+              "- 曲线贴 0 → 噪声来自整个保留带宽，砍低 k 没有作用；",
+              "- 曲线高 → 少数最低 k 的模式就吃掉这么多方差。", "",
+              "**z 依赖**：所有仪器都是低 z 高、高 z 趋 0。原因是保留带为 [k_min(z), k_max]，",
+              "低 z 时该带较窄、且方差偏带的下沿，加一个固定 Δ 就能咬下可观份额；",
+              "高 z 时方差向带的高端（高 k）集中，低 k 下限几乎无效。",
+              f"取最大测试增量 +{largest:g} Mpc⁻¹，按 z 的低/高四分位各取降幅中位数：", "",
               "|仪器|低 z 四分位降幅中位数 [%]|高 z 四分位降幅中位数 [%]|",
               "|---|---:|---:|"]
     for name, d in cuts[cuts.increment_Mpc_inv == largest].groupby("telescope", sort=False):
@@ -327,8 +367,32 @@ def figure_notes(smooth, cuts, jumps, fine):
         low = 100*(1-d.loc[d.z <= q1, "variance_ratio"].median())
         high = 100*(1-d.loc[d.z >= q3, "variance_ratio"].median())
         lines.append(f"|{name}|{low:.2f}|{high:.2f}|")
-    lines += ["", "抬高下限只删除非负贡献，方差与模式数必然不增；方差变小不等于灵敏度提高，",
-              "Fisher 判据仍是 (P_s+P_N)，删低 k 模式会同时删掉信号。", ""]
+    lines += ["", "抬高下限只删除非负贡献，所以方差与模式数必然不增；但**方差变小不等于灵敏度提高**：",
+              "Fisher 判据仍是 (P_s+P_N)，删低 k 模式会同时删掉信号。右栏降幅大并不说明",
+              "「应该去抬高下限」，只说明这部分噪声集中在低 k。", "",
+              "### 6. 三栏合用流程", "",
+              "```mermaid",
+              "flowchart LR",
+              '    A["左栏<br/>量级是否合理"] --> B["中栏<br/>曲线是否可信"]',
+              '    B -->|"平滑"| C["可用于后续 Fisher"]',
+              '    B -->|"尖刺"| D["右栏<br/>抬高低 k 下限能修吗"]',
+              '    D -->|"降幅小"| E["修不了<br/>需改基线插值或噪声模型"]',
+              "```",
+              "",
+              "串起来就是本次的诊断结论：**中栏发现 "
+              f"{worst_name} 有 {worst_ratio:.3f} 倍尖刺 → 右栏显示抬高下限最多只降 "
+              f"{100*(1-cuts.variance_ratio.min()):.2f}% 且尖峰仍在 → 说明它修不好这个尖峰**，"
+              "因为尖峰来自 1/n(u) 的零点边缘，而抬高下限只是删掉一小段低 k 模式。", "",
+              "### 7. 容易误读的地方", "",
+              "- **右栏不是灵敏度提升**。降幅大只表示低 k 权重集中，不表示去掉它就更灵敏。",
+              "- **中栏的 25% 阈值只是筛查标记**，不是物理突变判据；判定必须看细采样突起比。",
+              "- **`empty_modes` 的零不是「噪声消失」**，那是空集求和，只在极端下限下出现。",
+              "- **纵轴单位是 mK²**（不是 μK² 或 nK²）。",
+              "- **中栏只覆盖最大变化区间**，其它箱的同类伪影不会被这张图暴露。",
+              "- **分辨率有限**：本代码只有径向平均基线密度，能定位模式进出 / 插值区间变化 / 密度变化，",
+              "  不能指认具体是哪一对天线造成某个分组的贡献。",
+              "- **与主程序 CSV 一致属于自洽性检查**，不是对噪声模型本身的独立验证；",
+              "  唯一独立验证是 `verify_radial_sum()`，它只检查求和与截断的正确性。", ""]
     return lines
 
 

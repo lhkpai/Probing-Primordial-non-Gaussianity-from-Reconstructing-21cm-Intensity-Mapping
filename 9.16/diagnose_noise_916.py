@@ -241,7 +241,8 @@ def diagnose_survey(name, table, cfg, diagnostic, increments, fine_points):
 
 def plots(smooth, cuts, fine, out):
     names = list(smooth.telescope.unique())
-    fig, axes = plt.subplots(len(names),3,figsize=(15,3*len(names)),constrained_layout=True)
+    fig, axes = plt.subplots(len(names),3,figsize=(15,3*len(names)),constrained_layout=True,
+                             squeeze=False)
     for axes_row,name in zip(axes,names):
         a,b,c = axes_row
         d = smooth[smooth.telescope==name]
@@ -257,6 +258,78 @@ def plots(smooth, cuts, fine, out):
         c.legend(fontsize=8)
     fig.savefig(out/"noise_z_k_diagnostics.png",dpi=160)
     plt.close(fig)
+
+
+def figure_notes(smooth, cuts, jumps, fine):
+    """Reading guide for noise_z_k_diagnostics.png, built from the same frames.
+
+    The guide is generated rather than hand-written so that the numbers in it
+    always match the tables above after any rerun.
+    """
+    def fmt(value, digits=3):
+        return "—" if not np.isfinite(value) else f"{value:.{digits}g}"
+
+    lines = ["## 图 `noise_z_k_diagnostics.png` 读法", "",
+             "该图由 `plots()` 生成：5 行 = 仪器，3 列 = 三种问法。",
+             "纵轴单位是 mK²（体素热噪声方差，不含信号）。", "",
+             "|栏|代码入口|这一栏问什么|怎么读|",
+             "|---|---|---|---|",
+             "|左：Voxel variance|`integrate(s)`|单个体素热噪声方差随 z 的绝对量级|"
+             "对数轴。随 z 上升属预期，只做量级体检，不负责发现问题|",
+             "|中：Fine snapshots|`snapshot` 在最大箱变化处细采样 81 点|"
+             "该变化是真趋势还是数值假象|平滑 = 可信；孤立尖刺 = 伪影|",
+             "|右：Variance reduction|`integrate(s, s.k_min+Δ)`|"
+             "在掩码下限 k_min(z) 之上再抬高 Δ 能删掉多少方差|"
+             "高 = 噪声集中在最低 k；贴 0 = 砍低 k 无用|",
+             "",
+             "判据是邻点突起比 = 细采样点方差 ÷ 两侧点均值；1.25 只用于筛查，不是物理判据。", "",
+             "### 本图要点", "",
+             "|仪器|最大相邻箱变化|邻点突起比|判读|",
+             "|---|---:|---:|---|"]
+    for name, d in jumps.groupby("telescope", sort=False):
+        q = d.loc[d.abs_log_ratio.idxmax()]
+        v = fine.loc[fine.telescope == name, "variance_mK2"].to_numpy()
+        ratio = float(np.max(v[1:-1]/((v[:-2]+v[2:])/2)))
+        verdict = "有局部尖峰：数值伪影，不代表物理" if ratio > 1.25 else "平滑，真实趋势"
+        lines.append(f"|{name}|{100*q.relative_change:+.2f}%"
+                     f"（z={q.z_before:.6f}→{q.z_after:.6f}）|{ratio:.3f}|{verdict}|")
+    hotspots, hot_total = [], 0
+    for name, d in fine.groupby("telescope", sort=False):
+        d = d.sort_values("z")
+        hot, quiet = d[d.peak_group_fraction > .1], d[d.peak_group_fraction <= .1]
+        if hot.empty:
+            continue
+        hot_total += len(hot)
+        reference = float(quiet.peak_density.median())
+        hotspots += [f"|{name}|{r.z:.6f}|{r.variance_mK2:.4g}|{r.peak_kperp:.6f}"
+                     f"|{fmt(r.peak_density)}|{fmt(reference)}"
+                     f"|{fmt(r.peak_zero_edge_gap)}|{100*r.peak_group_fraction:.1f}%|"
+                     for r in hot.itertuples(index=False)]
+    if hotspots:
+        lines += ["", f"细采样中出现 {hot_total} 个「单组贡献 >10%」的尖峰，全部伴随基线密度塌缩：", "",
+                  "|仪器|z|方差 [mK²]|k_perp [Mpc⁻¹]|该组 n(u)|该仪器非热点中位 n(u)"
+                  "|距密度零点边缘 [Mpc⁻¹]|单组贡献|",
+                  "|---|---:|---:|---:|---:|---:|---:|---:|", *hotspots, "",
+                  "机制：分段线性基线 n(u) 可在若干 x 处取到 0；随 z 变化，固定的离散 k_perp 组沿 n(u) 滑动，",
+                  "落到零点边缘时 `Cnoise` 的 1/n(u) 被放大。这是插值伪影，不是仪器物理。"]
+    else:
+        lines += ["", "细采样中未出现「单组贡献 >10%」的尖峰。"]
+    largest = float(cuts.increment_Mpc_inv.max())
+    lines += ["", "### 右栏的 z 依赖", "",
+              f"取最大测试增量 +{largest:g} Mpc⁻¹，按 z 的低/高四分位各取降幅中位数：",
+              "低 z 时保留带 [k_min, k_max] 较窄且方差偏带下沿，抬高下限能咬下可观份额；",
+              "高 z 时方差向带的高端集中，低 k 下限几乎无效。", "",
+              "|仪器|低 z 四分位降幅中位数 [%]|高 z 四分位降幅中位数 [%]|",
+              "|---|---:|---:|"]
+    for name, d in cuts[cuts.increment_Mpc_inv == largest].groupby("telescope", sort=False):
+        d = d.sort_values("z")
+        q1, q3 = np.quantile(d.z, (.25, .75))
+        low = 100*(1-d.loc[d.z <= q1, "variance_ratio"].median())
+        high = 100*(1-d.loc[d.z >= q3, "variance_ratio"].median())
+        lines.append(f"|{name}|{low:.2f}|{high:.2f}|")
+    lines += ["", "抬高下限只删除非负贡献，方差与模式数必然不增；方差变小不等于灵敏度提高，",
+              "Fisher 判据仍是 (P_s+P_N)，删低 k 模式会同时删掉信号。", ""]
+    return lines
 
 
 def report(smooth, cuts, jumps, fine, out, cfg):
@@ -285,6 +358,7 @@ def report(smooth, cuts, jumps, fine, out, cfg):
              f"- 提高下限后最大的方差降幅为 {100*(1-cuts.variance_ratio.min()):.2f}%。",
              "- 邻点突起比是细采样点方差除以两侧点均值；大于1.25仅用来筛查局部尖峰。",
              *observations, "",
+             *figure_notes(smooth, cuts, jumps, fine),
              "## 红移变化", "",
              "下表列出各配置相邻箱比值变化最大的区间。超过25%仅用作筛查标记，不是物理突变判据。",
              "分解列用原箱方差归一化；退出项取负号。基线密度归因是固定旧 n(u)、先更新其他响应再更新密度的明确对照。", "",

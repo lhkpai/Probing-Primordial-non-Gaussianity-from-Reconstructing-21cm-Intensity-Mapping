@@ -1,7 +1,7 @@
-# 9.16 修改与物理核对（2026-09-20 更新）
+# 9.16 修改与物理核对（2026-09-21 更新）
 
 已在干净 Python 内核中运行完整 notebook。体素方差上限现改为0.363 Mpc⁻¹，
-Fisher上限仍为0.535 Mpc⁻¹；体素上限修改记录见 `voxel_kmax_update.json`；最新 Δz=0.01 运行检查见 `delta_z_update.json`。数值结果保存在本目录；
+Fisher上限也统一为0.363 Mpc⁻¹；体素上限修改记录见 `voxel_kmax_update.json`；Δz=0.01 历史运行检查见 `delta_z_update.json`；最新统一上限检查见 `common_kmax_update.json`。数值结果保存在本目录；
 旧 notebook 和原版 baofisher_k 已备份在 `backups/`。
 
 ## 实现对应关系
@@ -11,7 +11,7 @@ Fisher上限仍为0.535 Mpc⁻¹；体素上限修改记录见 `voxel_kmax_updat
 | 五个指定干涉配置 | SKA-MID、CHIME、HIRAX、Tianlai、MeerKAT，均已运行 |
 | 红移箱宽 0.01 | 固定步长，保留指定输出边界及原有末箱处理 |
 | 原版横向、径向下限 | 保留基线文件/均匀基线、适用的 FoV 及前景截止 |
-| 独立总波数上限 | 体素方差 `voxel_kmax=0.363`；Fisher `kmax=0.535`，不联动关闭其他限制 |
+| 独立总波数上限 | 体素方差 `voxel_kmax=0.363`；Fisher `kmax=0.363`，不联动关闭其他限制 |
 | 热噪声体素方差 | 使用 baofisher 的热噪声谱，不加入 Cfg，不再调用单碟辅助方差 |
 | 3000 Mpc/h、512 网格、sinc 窗口 | 盒长按 h_mock=0.6766 换算，体素边长 8.660028 Mpc |
 | 柱坐标 Fisher | 使用 k_perp、正 k_parallel 与正确积分测度；正负模式权重明确 |

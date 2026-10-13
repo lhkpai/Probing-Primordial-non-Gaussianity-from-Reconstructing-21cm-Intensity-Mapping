@@ -307,12 +307,31 @@ def verify_fisher_only():
             f.sigma_from_fisher(fine[key])/f.sigma_from_fisher(value)-1)))
             for key, value in matrices.items()}
         assert max(refinement.values()) < 1e-3
+        # Restore P_N only in the analytic covariance; the added A term is unchanged.
+        thermal, thermal_coverage = f._fisher_at_z(
+            models, e, z, cfg, noise, sigma, compare_spline=True, include_thermal_noise=True)
+        pn, _ = f.noise_power(p[valid], ell[valid], models.fid.geometry(z), e)
+        beta = (1+pn/power)**2
+        thermal_error = 0.
+        for key, field in [("analytic_common", None),
+                           ("analytic_noise", "A_noise_conditional"),
+                           ("analytic_noise_spline", "A_noise_spline")]:
+            addition = 0. if field is None else query[field][valid]
+            expected = (logarithmic*(w/(beta+addition))) @ logarithmic.T
+            residual = (thermal[key]-expected)/scale[:, None]/scale[None, :]
+            thermal_error = max(thermal_error, float(np.max(np.abs(residual))))
+            difference = (matrices[key]-thermal[key])/scale[:, None]/scale[None, :]
+            assert np.linalg.eigvalsh((difference+difference.T)/2).min() > -1e-10
+        assert thermal_error < 1e-11
+        assert thermal_coverage["supported_nodes"] == coverage["supported_nodes"]
         report["fisher_only"] = dict(
             denominator=f.TOTAL_DENOMINATOR, telescope=name, z=z,
             covariance_verified_independently=True,
             analytic_max_scaled_difference=analytic_error,
             voxel_variances_not_calculated=True,
-            thermal_power_not_used_in_fisher=True,
+            thermal_power_not_used_in_signal_only_fisher=True,
+            thermal_model_verified_independently=True,
+            thermal_max_scaled_difference=thermal_error,
             noise_does_not_increase_information=True,
             refinement_max_relative_sigma_change=refinement,
             voxel_validation_reused=True)

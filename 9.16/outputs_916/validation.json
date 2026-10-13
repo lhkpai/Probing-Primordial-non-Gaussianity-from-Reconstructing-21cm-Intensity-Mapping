@@ -19,7 +19,9 @@
     "covariance_verified_independently": true,
     "analytic_max_scaled_difference": 2.34494515657423e-16,
     "voxel_variances_not_calculated": true,
-    "thermal_power_not_used_in_fisher": true,
+    "thermal_power_not_used_in_signal_only_fisher": true,
+    "thermal_model_verified_independently": true,
+    "thermal_max_scaled_difference": 4.8342578385187094e-17,
     "noise_does_not_increase_information": true,
     "refinement_max_relative_sigma_change": {
       "analytic_common": 1.2371030436719721e-05,

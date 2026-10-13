@@ -3,6 +3,7 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 import hashlib
+import inspect
 import json
 import re
 import sys
@@ -25,6 +26,49 @@ def information_difference(larger, smaller):
     minimum = float(np.linalg.eigvalsh((difference + difference.T) / 2).min())
     assert minimum > -1e-8
     return minimum
+
+
+def check_denominator_comparison(cfg, names, notebook):
+    saved = joblib.load(OUT/"fisher_denominator_comparison.joblib")
+    expected = dict(
+        baseline=forecast._comparison_fingerprint(cfg, names),
+        comparison_code=hashlib.sha256(inspect.getsource(
+            forecast.compare_fisher_denominators).encode()).hexdigest())
+    assert saved["fingerprint"] == expected
+    table = pd.read_csv(OUT/"fisher_denominator_comparison.csv")
+    pd.testing.assert_frame_equal(table, saved["constraints"], check_dtype=False, rtol=1e-12, atol=1e-14)
+    assert len(table) == 2*len(names)*len(forecast.PARAMETERS)
+    prior = forecast.planck_fisher()
+    for model, entries in saved["models"].items():
+        assert set(entries) == set(names)
+        for name, item in entries.items():
+            matrices, constraints = item["matrices"], item["constraints"]
+            assert constraints.index.tolist() == forecast.PARAMETERS
+            selected = table[(table.covariance_model == model) & (table.telescope == name)].set_index("param")
+            pd.testing.assert_frame_equal(selected[constraints.columns], constraints,
+                                          check_dtype=False, rtol=1e-12, atol=1e-14)
+            for label, key in [("sigma_ana_full", "analytic_full"),
+                               ("sigma_ana_common", "analytic_common"),
+                               ("sigma_ana_noise", "analytic_noise"),
+                               ("sigma_ana_noise_spline", "analytic_noise_spline")]:
+                for suffix, matrix in [("", matrices[key]), ("_cmb", matrices[key]+prior)]:
+                    np.testing.assert_allclose(constraints[label+suffix],
+                                               forecast.sigma_from_fisher(matrix), rtol=3e-10)
+            information_difference(matrices["analytic_full"], matrices["analytic_common"])
+            for key in ["analytic_noise", "analytic_noise_spline"]:
+                information_difference(matrices["analytic_common"], matrices[key])
+    for name in names:
+        cv = saved["models"]["signal_only"][name]["matrices"]
+        thermal = saved["models"]["signal_plus_thermal"][name]["matrices"]
+        for key in cv:
+            information_difference(cv[key], thermal[key])
+    html = [o["data"]["text/html"] for c in notebook.cells if c.cell_type == "code"
+            for o in c.outputs if "text/html" in o.get("data", {})]
+    for model in saved["models"]:
+        fnl = table[(table.covariance_model == model) & (table.param == "f_NL")]
+        values = fnl[["sigma_ana_common", "sigma_ana_noise", "sigma_ana_noise_spline"]].to_numpy().ravel()
+        assert any(all(f"{value:.4f}" in block for value in values) for block in html)
+    return len(table)
 
 
 def run():
@@ -138,6 +182,7 @@ def run():
                                   check_dtype=False, rtol=1e-12, atol=1e-14)
     pd.testing.assert_frame_equal(coverage, pd.concat(individual_coverage, ignore_index=True),
                                   check_dtype=False, rtol=1e-12, atol=1e-14)
+    denominator_rows = check_denominator_comparison(namespace["cfg"], namespace["SURVEYS"], notebook)
     log = (OUT / "execution_notebook.log").read_text()
     seconds = float(re.search(r"Notebook execution complete: ([\d.]+)s", log).group(1))
     source_paths = [path, ROOT / "forecast_916.py", ROOT / "voxel_modes_916.py",
@@ -152,6 +197,8 @@ def run():
         current_result_consistency_passed=True,
         voxel_variances_reused=True, fisher_only_update=True,
         spline_comparison_passed=True,
+        both_analytic_denominators_checked=True,
+        denominator_comparison_parameter_rows=denominator_rows,
         source_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in source_paths},
         surveys=surveys)
     (OUT / "execution_summary.json").write_text(

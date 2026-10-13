@@ -3,6 +3,8 @@
 日常入口是 [9.16-interferometer-telescopes.ipynb](9.16-interferometer-telescopes.ipynb)。
 Notebook 调用 `run_fisher_only(cfg, SURVEYS)`，复用现有体素方差和 Noise 标定表。
 它按当前分母更新 Fisher 基准，并同时计算线性与 spline；匹配结果存在时直接读取。
+随后调用 `compare_fisher_denominators(cfg, SURVEYS)`，并列展示解析项含/不含 P_N 的两种模型。
+该入口复用已有不含 P_N 的结果，只补齐缺失的含 P_N 模型，之后读取同一比较缓存。
 当前配置为 `delta_z=0.01`、`kmax=voxel_kmax=0.363 Mpc^-1`。
 
 ## 文件作用
@@ -52,8 +54,12 @@ denom_total = denom_ana + denom_noise
 当前两种设置均只使用逐箱方差，因此完整表预测仍采用对角协方差近似。
 无支持点排除并记录；空交集的对照约束为 NaN，CMB先验不会掩盖该状态。
 
-解析项只保留宇宙方差，额外恢复散布由条件 Noise 项提供。
+默认模型的解析项只保留宇宙方差，额外恢复散布由条件 Noise 项提供。
 白噪声 RMS 匹配不等于完整仪器噪声谱匹配；`1/N` 迁移、箱间相关和恢复后的参数响应需要独立验证。
+
+新增对照将解析分母改为 `(p_hi + p_noise)**2`，额外 Noise 项仍为 `p_hi**2 * a_noise`。
+两种解析分母使用相同的体素 RMS、标定表、波数/红移域、参数导数和 CMB 先验。
+“解析项不含 P_N”不代表整套恢复模型没有噪声，条件 Noise 项仍然保留。
 
 五个配置使用完整表，均有有效共同支持。当前 notebook 配置、表格和序列化结果
 由 `tests/check_common_kmax.py` 核对，该检查不依赖历史备份。
@@ -67,7 +73,8 @@ denom_total = denom_ana + denom_noise
 
 `run_fisher_only` 读取现有体素表，更新完整仪器域解析基准，
 共同域只计算一遍，共用信号导数和积分节点，同时得到解析、双线性与三次样条预测。
-后面的 `compare_noise_interpolations` 直接显示同次保存的对比结果。
+Notebook 从 `compare_fisher_denominators` 的统一结果展示两种分母各自的插值对照。
+`compare_noise_interpolations` 仍可单独读取默认模型的插值结果。
 
 - 两者均先计算原始分箱的 `A=N_cal*tf_var/(2*tf_mean**2)`。
 - `(z, log sigma)` 仍使用相同的 Delaunay 线性权重。
@@ -81,14 +88,16 @@ denom_total = denom_ana + denom_noise
 `s=0` 表示穿过原始点，并不消除标定值本身的统计散布。
 两者的差异用于检查预测对插值选择的敏感性，不能据光滑程度判断物理准确性。
 
-对比保存在两个固定结果文件中：
+插值及分母对照保存在以下固定结果文件中：
 
 | 文件 | 内容 |
 | --- | --- |
 | `noise_interpolation_comparison.csv` | 五个望远镜的 f_NL 误差、相对变化、CMB 组合和回退权重占比 |
 | `noise_interpolation_comparison.joblib` | 三组共同域矩阵、全部参数误差、检查信息和输入指纹 |
+| `fisher_denominator_comparison.csv` | 两种解析分母、五个配置、七个参数，共70行的全部约束 |
+| `fisher_denominator_comparison.joblib` | 两种模型的完整/共同域矩阵、线性/spline与CMB组合及输入指纹 |
 
-输入及相关计算代码未变时直接读取这两个文件，不重复计算。
+输入及相关计算代码未变时直接读取对应缓存，不重复计算。
 需要明确强制重算对比时可使用 `reuse_saved=False`。
 
 ## 验证与重新运行

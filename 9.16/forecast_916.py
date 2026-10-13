@@ -446,7 +446,8 @@ def voxel_variance(integrator, e, geom):
     return integrator.integrate(amplitude, sig, kfg, valid_perp=valid)
 
 
-def _fisher_at_z(models, e, z, cfg, noise=None, sigma_mK=None, *, compare_spline=False):
+def _fisher_at_z(models, e, z, cfg, noise=None, sigma_mK=None, *, compare_spline=False,
+                 include_thermal_noise=False):
     """Compute all requested denominators on one grid and one set of derivatives."""
     if noise is not None and (sigma_mK is None or not np.isfinite(sigma_mK) or sigma_mK <= 0):
         raise ValueError("A finite positive voxel RMS is required for Noise calibration.")
@@ -491,8 +492,11 @@ def _fisher_at_z(models, e, z, cfg, noise=None, sigma_mK=None, *, compare_spline
     p_hi, derivatives = models.power_and_derivatives(p[valid], ell[valid], z)
     if not np.all(np.isfinite(p_hi) & (p_hi > 0)):
         raise FloatingPointError("Signal-only Fisher requires finite positive HI power.")
-    # Instrumental noise selects the calibration RMS; the analytic term is CV only.
+    # Keep the default CV-only model; optionally restore the Gaussian thermal term.
     denom_ana = p_hi**2
+    if include_thermal_noise:
+        p_noise, _ = noise_power(p[valid], ell[valid], geom, e)
+        denom_ana = (p_hi + p_noise)**2
     w = weights[valid]/(4*np.pi**2)
     analytic = (derivatives*(w/denom_ana)) @ derivatives.T
     combined = analytic.copy()
@@ -522,9 +526,10 @@ def _fisher_at_z(models, e, z, cfg, noise=None, sigma_mK=None, *, compare_spline
     return matrices, coverage
 
 
-def fisher_at_z(models, e, z, cfg, noise=None, sigma_mK=None):
+def fisher_at_z(models, e, z, cfg, noise=None, sigma_mK=None, *, include_thermal_noise=False):
     """Original linear-interpolation API; preserve existing callers and results."""
-    matrices, coverage = _fisher_at_z(models, e, z, cfg, noise, sigma_mK)
+    matrices, coverage = _fisher_at_z(models, e, z, cfg, noise, sigma_mK,
+                                    include_thermal_noise=include_thermal_noise)
     return matrices["analytic_common"], matrices["analytic_noise"], coverage
 
 
@@ -556,7 +561,8 @@ def planck_fisher():
         [0,0,0,0,0,0,3.8447e-2]])
 
 
-def _noise_fisher(models, e, frame, cfg, noise, *, compare_spline=False):
+def _noise_fisher(models, e, frame, cfg, noise, *, compare_spline=False,
+                  include_thermal_noise=False):
     """Use the supplied voxel-variance table to select physical noise levels.
 
     Interpolate variance versus z_mid, then take sqrt, matching the HKL
@@ -594,7 +600,8 @@ def _noise_fisher(models, e, frame, cfg, noise, *, compare_spline=False):
         for z, weight in zip(zs, wz):
             sigma_mK = float(np.sqrt(np.interp(z, sample_z, sample_var)))
             local_matrices, coverage = _fisher_at_z(
-                models, local, z, cfg, noise, sigma_mK, compare_spline=compare_spline)
+                models, local, z, cfg, noise, sigma_mK, compare_spline=compare_spline,
+                include_thermal_noise=include_thermal_noise)
             dv = weight * models.fid.volume_element(z, e)
             for key in matrices:
                 matrices[key] += dv * local_matrices[key]
@@ -802,7 +809,7 @@ def load_results(cfg, surveys=None):
     return results
 
 
-def _analytic_fisher(models, e, frame, cfg):
+def _analytic_fisher(models, e, frame, cfg, *, include_thermal_noise=False):
     """Integrate the full instrument domain using saved observed z boundaries."""
     matrix = np.zeros((len(PARAMETERS), len(PARAMETERS)))
     for index, row in enumerate(frame.itertuples(index=False)):
@@ -812,7 +819,8 @@ def _analytic_fisher(models, e, frame, cfg):
         local = dict(e, dnutot=e["nu_line"]/(1+row.z_obs_low)
                      - e["nu_line"]/(1+row.z_obs_high))
         for z, weight in zip(zs, wz):
-            analytic, _, _ = fisher_at_z(models, local, z, cfg)
+            analytic, _, _ = fisher_at_z(models, local, z, cfg,
+                                        include_thermal_noise=include_thermal_noise)
             matrix += weight*models.fid.volume_element(z, e)*analytic
         if (index+1) % 20 == 0 or index == len(frame)-1:
             print(f"[{row.telescope}] Analytic Fisher bin {index+1}/{len(frame)}", flush=True)
@@ -1031,6 +1039,83 @@ def compare_noise_interpolations(cfg, surveys=None, *, reuse_saved=True):
         noise.close()
 
     return _save_interpolation_comparison(cfg, surveys, records, saved_surveys)
+
+
+def compare_fisher_denominators(cfg, surveys=None, *, reuse_saved=True):
+    """Compare analytic covariance with/without P_N, reusing the CV-only forecast.
+
+    Only the missing thermal-covariance model is integrated. Both models use
+    the same voxel RMS, Noise calibration, masks, parameters and CMB prior.
+    """
+    surveys = SURVEYS if surveys is None else surveys
+    if not cfg.run_fisher or cfg.noise_fisher_only:
+        raise ValueError("Denominator comparison requires the full Noise table and Fisher enabled.")
+    out = Path(cfg.output_dir)
+    fingerprint = dict(
+        baseline=_comparison_fingerprint(cfg, surveys),
+        comparison_code=hashlib.sha256(inspect.getsource(compare_fisher_denominators).encode()).hexdigest())
+    cache_path = out/"fisher_denominator_comparison.joblib"
+    if reuse_saved and cache_path.is_file():
+        saved = joblib.load(cache_path)
+        if saved.get("fingerprint") == fingerprint:
+            print("Using saved Fisher results for both analytic denominators.", flush=True)
+            return saved
+    baseline = load_results(cfg, surveys)
+    forecasts = {"signal_only": {}, "signal_plus_thermal": {}}
+    noise, models = NoiseCalibration(cfg), None
+    prior = planck_fisher()
+    try:
+        models = SignalModels(cfg)
+        for previous in baseline:
+            name = previous["telescope"]
+            if previous["metadata"]["noise_fingerprint"] != noise.table.metadata["scientific_fingerprint"]:
+                raise ValueError("Saved results and Noise calibration must match.")
+            forecasts["signal_only"][name] = dict(
+                matrices=previous["matrices"], constraints=previous["constraints"],
+                coverage_summary=previous["metadata"]["noise_coverage"])
+            e, frame = experiment(name, cfg), previous["variance_table"]
+            print(f"[{name}] Updating covariance with P_N; reusing voxel variance.", flush=True)
+            full = _analytic_fisher(models, e, frame, cfg, include_thermal_noise=True)
+            matrices, coverage, summary = _noise_fisher(
+                models, e, frame, cfg, noise, compare_spline=True, include_thermal_noise=True)
+            matrices["analytic_full"] = full
+            constraints = pd.DataFrame(index=PARAMETERS)
+            for label, key in [("sigma_ana_full", "analytic_full"),
+                               ("sigma_ana_common", "analytic_common"),
+                               ("sigma_ana_noise", "analytic_noise"),
+                               ("sigma_ana_noise_spline", "analytic_noise_spline")]:
+                constraints[label] = sigma_from_fisher(matrices[key])
+                constraints[label+"_cmb"] = sigma_from_fisher(matrices[key]+prior)
+            constraints.index.name = "param"
+            if not np.isfinite(constraints.to_numpy()).all():
+                raise FloatingPointError(f"{name}: undefined parameter errors in thermal comparison.")
+            forecasts["signal_plus_thermal"][name] = dict(
+                matrices=matrices, constraints=constraints, noise_coverage=coverage,
+                coverage_summary=summary)
+            row = constraints.loc["f_NL"]
+            print(f"[{name}] with P_N: analytic={row['sigma_ana_common']:.6g}, "
+                  f"linear={row['sigma_ana_noise']:.6g}, spline={row['sigma_ana_noise_spline']:.6g}", flush=True)
+    finally:
+        if models is not None:
+            models.close()
+        noise.close()
+    tables = []
+    for model, entries in forecasts.items():
+        for name, item in entries.items():
+            table = item["constraints"].reset_index()
+            table.insert(0, "telescope", name)
+            table.insert(0, "covariance_model", model)
+            tables.append(table)
+    combined = pd.concat(tables, ignore_index=True)
+    saved = dict(
+        fingerprint=fingerprint, parameters=PARAMETERS, models=forecasts, constraints=combined,
+        analytic_denominators=dict(signal_only=ANALYTIC_DENOMINATOR,
+                                   signal_plus_thermal="(P_HI + P_N)**2"),
+        added_noise_denominator="P_HI**2 * A_noise_conditional",
+        voxel_variance_reused=True, signal_only_results_reused=True)
+    joblib.dump(saved, cache_path)
+    combined.to_csv(out/"fisher_denominator_comparison.csv", index=False)
+    return saved
 
 
 def plot_results(results, output_dir=None):

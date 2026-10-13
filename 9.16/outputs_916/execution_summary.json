@@ -1,5 +1,5 @@
 {
-  "checked_at": "2026-10-13T20:47:19+08:00",
+  "checked_at": "2026-10-14T01:23:01+08:00",
   "config": {
     "delta_z": 0.01,
     "kmax": 0.363,
@@ -20,7 +20,7 @@
   },
   "notebook_config_matches_results": true,
   "notebook_errors": 0,
-  "notebook_execution_seconds": 1701.3,
+  "notebook_execution_seconds": 6.5,
   "total_rows": 988,
   "valid_rows": 843,
   "denominator_model": "P_HI**2 + P_HI**2 * A_noise_conditional",
@@ -28,9 +28,11 @@
   "voxel_variances_reused": true,
   "fisher_only_update": true,
   "spline_comparison_passed": true,
+  "both_analytic_denominators_checked": true,
+  "denominator_comparison_parameter_rows": 70,
   "source_sha256": {
-    "/home/liuhk/research/9.16/9.16-interferometer-telescopes.ipynb": "3c4d65e3e6328a4c123042d4f17ccc5f3c12b7d3b40eac4daea529e1da0b356f",
-    "/home/liuhk/research/9.16/forecast_916.py": "1f604a12a931a7373267a085657377ca2cae29db3ebc8e8587e762f2adde4184",
+    "/home/liuhk/research/9.16/9.16-interferometer-telescopes.ipynb": "495d48f80484b941fe7e9edad36d66a392db2ae38825f9937dad1401494d7f18",
+    "/home/liuhk/research/9.16/forecast_916.py": "f9916ee27b8f4ec1ab1021b46883a785c95bfc2432934a2d7d647fb4cdd9228c",
     "/home/liuhk/research/9.16/voxel_modes_916.py": "f23dac2c976c11807ebca4bbfd35df0034ca01b8c80085e261ffeb2c669d3222",
     "/home/liuhk/research/9.16/diagnose_noise_916.py": "3bfdf3894a004c3df4b61687c8380bed9d99c7616e3deaa3ef64e97408f2162b",
     "/home/liuhk/bao21cm-master/bao21cm-master/radiofisher/baofisher_k.py": "c73159c0cd71ebe956c816397eb8f68229a71f2e302f7bac979377b87bd9f5f6",

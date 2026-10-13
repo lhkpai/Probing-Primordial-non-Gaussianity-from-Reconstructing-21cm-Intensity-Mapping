@@ -9,7 +9,9 @@ from __future__ import annotations
 import contextlib
 import copy
 from dataclasses import asdict, dataclass
+import hashlib
 import io
+import inspect
 import json
 from pathlib import Path
 import sys
@@ -19,11 +21,13 @@ import joblib
 import numpy as np
 import pandas as pd
 from numpy.polynomial.legendre import leggauss
-from scipy.interpolate import PchipInterpolator, RegularGridInterpolator
+from scipy.interpolate import PchipInterpolator, RectBivariateSpline
 from classy import Class
 
 ROOT = Path(__file__).resolve().parent
-BAO_ROOT = ROOT.parent / "bao21cm-master/bao21cm-master"
+RESEARCH_ROOT = ROOT.parent
+BAO_ROOT = RESEARCH_ROOT.parent / "bao21cm-master/bao21cm-master"
+NOISE_ROOT = Path("/mnt/xiaodong/luantch/LSS21cm_freeloadXD/PosiRestore/FisherMess/noise_hkl")
 if str(BAO_ROOT) not in sys.path:
     sys.path.insert(0, str(BAO_ROOT))
 from radiofisher import baofisher_k as bf, experiments as ex
@@ -34,6 +38,8 @@ SURVEYS = ["ska_mid1_interferom", "chime_icyl", "hirax_interferom",
 PARAMETERS = ["lnA", "Omega_m", "omega_b", "omega_cdm", "n_s", "w0", "f_NL"]
 FIDUCIAL = dict(lnA=float(np.log(2.1e-9)), Omega_m=.3153, omega_b=.02237,
                 omega_cdm=.1200, n_s=.9649, w0=-1., f_NL=0.)
+ANALYTIC_DENOMINATOR = "P_HI**2"
+TOTAL_DENOMINATOR = "P_HI**2 + P_HI**2 * A_noise_conditional"
 
 
 @dataclass(frozen=True)
@@ -50,10 +56,9 @@ class Config:
     n_z: int = 2                       # Gauss nodes per observed redshift interval.
     pk_nodes: int = 900
     run_fisher: bool = True
-    mock_file: str = str(ROOT / "mock_fisher_arr.joblib")
-    mock_k_unit: str = "h/Mpc"         # Explicit legacy-product unit assumption.
-    # Actual labels in the source paths, not the old nominal linspace(.5,3,6).
-    mock_redshifts: tuple = (.5110, .9890, 1.5010, 2.0050, 2.5010, 3.0170)
+    noise_file: str = str(NOISE_ROOT / "data/noise_hkl_N200.h5")
+    noise_wedge: bool = True
+    noise_fisher_only: bool = False   # Full valid 200x200 grid; True selects the 39-bin subset.
     output_dir: str = str(ROOT / "outputs_916")
 
     def __post_init__(self):
@@ -150,7 +155,7 @@ class Cosmology:
                         w0=p["w0"], wa=0., mnu=.06, sigma_8=.8, fNL=0.)
             with contextlib.redirect_stdout(io.StringIO()):
                 self._transfer = bf.deriv_transfer(
-                    cosm, str(ROOT / "transfer_bf_cache.dat"),
+                    cosm, str(RESEARCH_ROOT / "transfer_bf_cache.dat"),
                     kmax=bf.CAMB_KMAX, kref=.002*self.h, force=False)[0]
         return self._transfer(k)
 
@@ -207,33 +212,140 @@ class SignalModels:
             dn.close()
 
 
-class MockVariance:
-    def __init__(self, cfg):
-        data = joblib.load(cfg.mock_file)
-        self.z = np.asarray(cfg.mock_redshifts, dtype=float)
-        if len(data) != len(self.z):
-            raise ValueError("Mock redshift metadata does not match the layer count.")
-        if cfg.mock_k_unit not in ("h/Mpc", "1/Mpc"):
-            raise ValueError("Explicit mock_k_unit must be h/Mpc or 1/Mpc.")
-        scale = cfg.h_mock if cfg.mock_k_unit == "h/Mpc" else 1.
-        self.p = np.asarray(data[0]["kper_bin"], float)*scale
-        self.ell = np.asarray(data[0]["kpar_bin"], float)*scale
-        for d in data:
-            if not (np.array_equal(d["kper_bin"], data[0]["kper_bin"])
-                    and np.array_equal(d["kpar_bin"], data[0]["kpar_bin"])):
-                raise ValueError("Mock layers must use the same two-dimensional axes.")
-        cube = np.stack([d["fisher_arr"] for d in data]).astype(float)
-        if not np.all(np.isfinite(cube) & (cube >= 0)):
-            raise ValueError("Mock variance contains invalid or negative values.")
-        for axis in (self.z, self.p, self.ell):
-            if np.any(np.diff(axis) <= 0):
-                raise ValueError("Mock axes must be strictly increasing.")
-        self.interp = RegularGridInterpolator((self.z, self.p, self.ell), cube,
-                                              bounds_error=True)
+class NoiseCalibration:
+    """Thin adapter to the existing HKL reader; Fisher coordinates are Mpc^-1.
 
-    def evaluate(self, p, ell, z):
-        return self.interp(np.column_stack((np.full(p.size, z), p.ravel(), ell.ravel()))
-                           ).reshape(p.shape)
+    The reader forms A = N_cal * tf_var / (2 * tf_mean**2) at native bins,
+    then interpolates A. Never repeat that mode-count conversion here.
+    """
+
+    def __init__(self, cfg):
+        # Keep the calibration package read-only and reuse its validated reader.
+        if str(NOISE_ROOT) not in sys.path:
+            sys.path.insert(0, str(NOISE_ROOT))
+        from noise_hkl import NoiseHKLTable
+
+        self.table = NoiseHKLTable(cfg.noise_file)
+        self.h = cfg.h_mock
+        self.wedge = cfg.noise_wedge
+        self.fisher_only = cfg.noise_fisher_only
+        self.z = self.table.z
+        mask = self.table.fisher_mask if self.fisher_only else self.table.N_cal > 0
+        ip, il = np.where(mask)
+        self.p = self.table.k_perp[np.unique(ip)] * self.h
+        self.ell = self.table.k_para[np.unique(il)] * self.h
+
+    def supports(self, z, sigma_mK):
+        """Check the actual (z, log sigma) convex hull, without extrapolation."""
+        try:
+            self.table.node_weights(z, sigma_mK)
+        except ValueError:
+            return False
+        return True
+
+    def _native_k(self, p, ell):
+        """Convert Mpc^-1 to h/Mpc; snap only endpoint round-trip roundoff."""
+        kp = np.asarray(np.asarray(p, dtype=float)/self.h)
+        ka = np.asarray(np.abs(np.asarray(ell, dtype=float))/self.h)
+        tolerance = 8*np.finfo(float).eps
+        for values, axis in [(kp, self.table.k_perp), (ka, self.table.k_para)]:
+            for edge in axis[[0, -1]]:
+                values[np.abs(values-edge) <= tolerance*abs(edge)] = edge
+        return kp, ka
+
+    def evaluate(self, p, ell, z, sigma_mK, *, bounds_error=False):
+        kp, ka = self._native_k(p, ell)
+        return self.table.evaluate(
+            z, sigma_mK, kp, ka,
+            wedge=self.wedge, fisher_only=self.fisher_only,
+            bounds_error=bounds_error,
+        )
+
+    def evaluate_amplitude(self, p, ell, z, sigma_mK, *, bounds_error=False,
+                           method="linear"):
+        """Fisher-only A query at one (z, sigma), with the reader's exact rules.
+
+        Both interpolation steps are linear, so first combine native k planes
+        at this (z, sigma), then interpolate in k. This avoids repeating the
+        same redshift interpolation for hundreds of thousands of modes.
+        Every positive-weight node and corner must still be valid. ``both``
+        also evaluates a cubic spline on the same normalized A plane. Cubic
+        values that are negative/nonfinite explicitly fall back to linear;
+        they never remove modes or silently enter a Fisher denominator.
+        """
+        if method not in {"linear", "spline", "both"}:
+            raise ValueError("Noise interpolation must be linear, spline, or both.")
+        if method != "linear" and self.fisher_only:
+            raise ValueError("Cubic comparison requires the full Noise table (fisher_only=False).")
+        p, ell = np.broadcast_arrays(p, ell)
+        try:
+            node = self.table.node_weights(z, sigma_mK)
+        except ValueError:
+            if bounds_error:
+                raise
+            missing = {"A_noise_conditional": np.full(p.shape, np.nan),
+                       "valid": np.zeros(p.shape, dtype=bool)}
+            if method != "linear":
+                missing.update(A_noise_spline=np.full(p.shape, np.nan),
+                               spline_fallback=np.zeros(p.shape, dtype=bool))
+            return missing
+        amplitude = np.zeros_like(self.table.N_cal)
+        supported = (self.table.fisher_mask.copy() if self.fisher_only
+                     else np.ones_like(amplitude, dtype=bool))
+        for (iz, isig), weight in zip(node["indices"], node["weights"]):
+            plane = self.table.at_node(int(iz), int(isig), wedge=self.wedge)
+            supported &= plane["valid"]
+            amplitude += weight * np.where(plane["valid"], plane["A_noise_conditional"], 0.)
+
+        kp, ka = self._native_k(p.ravel(), ell.ravel())
+        axes = (self.table.k_perp, self.table.k_para)
+        valid = (np.isfinite(kp) & np.isfinite(ka)
+                 & (kp >= axes[0][0]) & (kp <= axes[0][-1])
+                 & (ka >= axes[1][0]) & (ka <= axes[1][-1]))
+        indices, fractions = [], []
+        for axis, values in zip(axes, (kp, ka)):
+            values = np.where(valid, values, axis[0])
+            index = np.clip(np.searchsorted(axis, values, side="right")-1, 0, len(axis)-2)
+            fraction = (values-axis[index])/(axis[index+1]-axis[index])
+            fraction[np.abs(fraction) < 1e-12] = 0.
+            fraction[np.abs(fraction-1) < 1e-12] = 1.
+            indices.append(index)
+            fractions.append(fraction)
+        ix, iy = indices
+        fx, fy = fractions
+        result = np.zeros_like(kp)
+        for dx, dy, weight in [(0, 0, (1-fx)*(1-fy)), (1, 0, fx*(1-fy)),
+                               (0, 1, (1-fx)*fy), (1, 1, fx*fy)]:
+            corner_valid = supported[ix+dx, iy+dy]
+            valid &= corner_valid | (weight == 0)
+            result += weight * np.where(corner_valid, amplitude[ix+dx, iy+dy], 0.)
+        cubic, fallback = None, None
+        if method != "linear":
+            # The current full 200x200 calibration is a complete rectangle.
+            # Do not fill masked holes to make another dataset fit a spline.
+            if (not supported.all() or not np.isfinite(amplitude).all()
+                    or np.any(amplitude < 0)):
+                raise ValueError("Spline needs a complete, finite, nonnegative calibration plane.")
+            cubic = np.full_like(result, np.nan)
+            if valid.any():
+                spline = RectBivariateSpline(*axes, amplitude, kx=3, ky=3, s=0)
+                cubic[valid] = spline.ev(kp[valid], ka[valid])
+            fallback = valid & (~np.isfinite(cubic) | (cubic < 0))
+            cubic[fallback] = result[fallback]
+        if bounds_error and not valid.all():
+            raise ValueError("Noise query outside valid calibration support.")
+        result[~valid] = np.nan
+        answer = {"A_noise_conditional": result.reshape(p.shape),
+                  "valid": valid.reshape(p.shape)}
+        if cubic is not None:
+            answer.update(A_noise_spline=cubic.reshape(p.shape),
+                          spline_fallback=fallback.reshape(p.shape))
+            if method == "spline":
+                answer["A_noise_conditional"] = answer["A_noise_spline"]
+        return answer
+
+    def close(self):
+        self.table.close()
 
 
 def transverse_bounds(e, geom):
@@ -249,14 +361,14 @@ def transverse_bounds(e, geom):
     return 2*np.pi*np.array([umin, umax])/geom["r"]
 
 
-def cylindrical_grid(e, geom, cfg, mock=None):
+def cylindrical_grid(e, geom, cfg, noise=None):
     """Gauss quadrature in p and positive ell, with exact spherical upper edge."""
     ellmin, cap = bf.noise_k_limits(geom, e)
     pmin, pmax = transverse_bounds(e, geom)
     ellcap = cap
-    if mock is not None:
-        pmin, pmax = max(pmin, mock.p[0]), min(pmax, mock.p[-1])
-        ellmin, ellcap = max(ellmin, mock.ell[0]), min(ellcap, mock.ell[-1])
+    if noise is not None:
+        pmin, pmax = max(pmin, noise.p[0]), min(pmax, noise.p[-1])
+        ellmin, ellcap = max(ellmin, noise.ell[0]), min(ellcap, noise.ell[-1])
     pmax = min(pmax, np.sqrt(max(0., cap**2-ellmin**2)))
     if pmax <= pmin or ellcap <= ellmin:
         return None
@@ -268,6 +380,9 @@ def cylindrical_grid(e, geom, cfg, mock=None):
         nu = e["nu_line"]/(1+geom["z"])
         knots = np.asarray(e["n(x)"].x)*2*np.pi*nu/geom["r"]
         edges = np.unique(np.r_[edges,knots[(knots>pmin)&(knots<pmax)]])
+    if noise is not None:
+        # Calibration masks change at bin centres; align quadrature segments.
+        edges = np.unique(np.r_[edges, noise.p[(noise.p > pmin) & (noise.p < pmax)]])
     nodes, node_weights = [], []
     order = max(4,int(np.ceil(cfg.n_perp/24)))
     for left,right in zip(edges[:-1],edges[1:]):
@@ -283,9 +398,19 @@ def cylindrical_grid(e, geom, cfg, mock=None):
     logp, wp = np.concatenate(nodes),np.concatenate(node_weights)
     p = np.exp(logp)
     upper = np.minimum(np.sqrt(np.maximum(0., cap**2-p*p)), ellcap)
-    x, w = leggauss(cfg.n_parallel)
-    ell = ellmin+(upper[:, None]-ellmin)*(x[None, :]+1)/2
-    weight = (wp*p*p)[:, None]*(upper[:, None]-ellmin)*w[None, :]/2
+    parallel_edges = np.array([ellmin, ellcap])
+    if noise is not None:
+        parallel_edges = np.unique(np.r_[parallel_edges,
+            noise.ell[(noise.ell > ellmin) & (noise.ell < ellcap)]])
+    order_parallel = max(4, int(np.ceil(cfg.n_parallel / (len(parallel_edges)-1))))
+    x, w = leggauss(order_parallel)
+    parallel_nodes, parallel_weights = [], []
+    for left, right in zip(parallel_edges[:-1], parallel_edges[1:]):
+        width = np.maximum(0., np.minimum(upper, right)-left)
+        parallel_nodes.append(left + width[:, None]*(x[None, :]+1)/2)
+        parallel_weights.append((wp*p*p)[:, None]*width[:, None]*w[None, :]/2)
+    ell = np.concatenate(parallel_nodes, axis=1)
+    weight = np.concatenate(parallel_weights, axis=1)
     p = np.broadcast_to(p[:, None], ell.shape)
     valid = bf.interferometer_mode_mask(geom["r"]*p, geom["rnu"]*ell, geom, e)
     return p, ell, np.where(valid, weight, 0.), valid
@@ -321,25 +446,86 @@ def voxel_variance(integrator, e, geom):
     return integrator.integrate(amplitude, sig, kfg, valid_perp=valid)
 
 
-def fisher_at_z(models, e, z, cfg, mock=None):
+def _fisher_at_z(models, e, z, cfg, noise=None, sigma_mK=None, *, compare_spline=False):
+    """Compute all requested denominators on one grid and one set of derivatives."""
+    if noise is not None and (sigma_mK is None or not np.isfinite(sigma_mK) or sigma_mK <= 0):
+        raise ValueError("A finite positive voxel RMS is required for Noise calibration.")
     geom = models.fid.geometry(z)
-    grid = cylindrical_grid(e, geom, cfg, mock)
     zeros = np.zeros((len(PARAMETERS), len(PARAMETERS)))
+    keys = ["analytic_common", "analytic_noise"]
+    if compare_spline:
+        if noise is None:
+            raise ValueError("Spline comparison requires Noise calibration.")
+        keys.append("analytic_noise_spline")
+    matrices = {key: zeros.copy() for key in keys}
+    full_grid = cylindrical_grid(e, geom, cfg)
+    coverage = dict(status="no_instrument_modes", sigma_mK=sigma_mK,
+                    instrument_mode_weight=0., supported_mode_weight=0.,
+                    supported_fraction=0., candidate_nodes=0, supported_nodes=0)
+    if full_grid is None:
+        return matrices, coverage
+    coverage["instrument_mode_weight"] = float(full_grid[2].sum())
+    if noise is not None and not noise.supports(z, sigma_mK):
+        coverage["status"] = "outside_z_sigma_support"
+        return matrices, coverage
+    grid = full_grid if noise is None else cylindrical_grid(e, geom, cfg, noise)
     if grid is None:
-        return zeros, zeros.copy(), 0.
+        coverage["status"] = "no_k_overlap"
+        return matrices, coverage
     p, ell, weights, valid = grid
-    pn, _ = noise_power(p, ell, geom, e)
-    ps, derivatives = models.power_and_derivatives(p, ell, z)
-    # Invalid powers never enter an arithmetic product or an inverse variance.
-    d = derivatives[:, valid]
-    denom = (ps[valid]+pn[valid])**2
+    valid = valid & (weights > 0)
+    coverage["candidate_nodes"] = int(valid.sum())
+    if noise is not None:
+        query = noise.evaluate_amplitude(p, ell, z, sigma_mK,
+                                         method="both" if compare_spline else "linear")
+        a_noise = np.asarray(query["A_noise_conditional"])
+        valid &= query["valid"] & np.isfinite(a_noise) & (a_noise >= 0)
+    if not np.any(valid):
+        coverage["status"] = "no_valid_noise_modes"
+        return matrices, coverage
+    coverage.update(status="ok", supported_nodes=int(valid.sum()),
+                    supported_mode_weight=float(weights[valid].sum()))
+    coverage["supported_fraction"] = (
+        coverage["supported_mode_weight"] / coverage["instrument_mode_weight"])
+    # Evaluate only supported modes; NaNs from missing calibration never enter F.
+    p_hi, derivatives = models.power_and_derivatives(p[valid], ell[valid], z)
+    if not np.all(np.isfinite(p_hi) & (p_hi > 0)):
+        raise FloatingPointError("Signal-only Fisher requires finite positive HI power.")
+    # Instrumental noise selects the calibration RMS; the analytic term is CV only.
+    denom_ana = p_hi**2
     w = weights[valid]/(4*np.pi**2)
-    analytic = (d*(w/denom)) @ d.T
+    analytic = (derivatives*(w/denom_ana)) @ derivatives.T
     combined = analytic.copy()
-    if mock is not None:
-        extra = mock.evaluate(p, ell, z)[valid]*ps[valid]**2
-        combined = (d*(w/(denom+extra))) @ d.T
-    return analytic, combined, float(weights.sum())
+    if noise is not None:
+        # The calibrated conditional Noise supplies the additional variance.
+        denom_noise = p_hi**2 * a_noise[valid]
+        denom_total = denom_ana + denom_noise
+        combined = (derivatives*(w/denom_total)) @ derivatives.T
+        ratio = denom_noise/denom_ana
+        coverage.update(A_noise_min=float(a_noise[valid].min()),
+                        A_noise_max=float(a_noise[valid].max()),
+                        noise_to_analytic_median=float(np.median(ratio)),
+                        noise_to_analytic_p90=float(np.quantile(ratio, .9)))
+    matrices.update(analytic_common=analytic, analytic_noise=combined)
+    if compare_spline:
+        a_spline = query["A_noise_spline"][valid]
+        fallback = query["spline_fallback"][valid]
+        denominator = denom_ana + p_hi**2 * a_spline
+        matrices["analytic_noise_spline"] = (derivatives*(w/denominator)) @ derivatives.T
+        relative = np.divide(a_spline-a_noise[valid], a_noise[valid],
+                             out=np.zeros_like(a_spline), where=a_noise[valid] > 0)
+        coverage.update(
+            spline_fallback_quadrature_nodes=int(fallback.sum()),
+            spline_fallback_mode_weight=float(weights[valid][fallback].sum()),
+            spline_max_abs_relative_A_change=float(np.max(np.abs(relative))),
+            A_spline_min=float(a_spline.min()), A_spline_max=float(a_spline.max()))
+    return matrices, coverage
+
+
+def fisher_at_z(models, e, z, cfg, noise=None, sigma_mK=None):
+    """Original linear-interpolation API; preserve existing callers and results."""
+    matrices, coverage = _fisher_at_z(models, e, z, cfg, noise, sigma_mK)
+    return matrices["analytic_common"], matrices["analytic_noise"], coverage
 
 
 def sigma_from_fisher(matrix):
@@ -370,11 +556,88 @@ def planck_fisher():
         [0,0,0,0,0,0,3.8447e-2]])
 
 
-def run_survey(name, cfg, models, integrator, mock):
+def _noise_fisher(models, e, frame, cfg, noise, *, compare_spline=False):
+    """Use the supplied voxel-variance table to select physical noise levels.
+
+    Interpolate variance versus z_mid, then take sqrt, matching the HKL
+    production convention. Clip the integration interval to tabulated support;
+    never use np.interp's endpoint extension as calibration data.
+    """
+    keys = ["analytic_common", "analytic_noise"]
+    if compare_spline:
+        keys.append("analytic_noise_spline")
+    matrices = {key: np.zeros((len(PARAMETERS), len(PARAMETERS))) for key in keys}
+    good = np.isfinite(frame.var_noise_mK2) & (frame.var_noise_mK2 > 0)
+    samples = frame.loc[good, ["z_mid", "var_noise_mK2"]].sort_values("z_mid")
+    sample_z, sample_var = samples.to_numpy().T
+    records = []
+    observed_volume = 0.
+    for index, row in enumerate(frame.itertuples(index=False)):
+        record = dict(telescope=row.telescope, z_low=row.z_low, z_high=row.z_high,
+                      z=np.nan, sigma_mK=np.nan, volume_weight_Mpc3=0.,
+                      instrument_mode_weight=0., supported_mode_weight=0.,
+                      supported_fraction=0., candidate_nodes=0, supported_nodes=0)
+        if row.status == "out_of_band":
+            records.append(record | {"status": "out_of_band"})
+            continue
+        observed_volume += models.fid.volume(row.z_obs_low, row.z_obs_high, e)
+        if not len(sample_z):
+            records.append(record | {"status": "no_voxel_noise_samples"})
+            continue
+        lo = max(row.z_obs_low, noise.z[0], sample_z[0])
+        hi = min(row.z_obs_high, noise.z[-1], sample_z[-1])
+        if hi <= lo:
+            records.append(record | {"status": "outside_redshift_support"})
+            continue
+        zs, wz = gauss_interval(lo, hi, cfg.n_z)
+        local = dict(e, dnutot=e["nu_line"]/(1+lo)-e["nu_line"]/(1+hi))
+        for z, weight in zip(zs, wz):
+            sigma_mK = float(np.sqrt(np.interp(z, sample_z, sample_var)))
+            local_matrices, coverage = _fisher_at_z(
+                models, local, z, cfg, noise, sigma_mK, compare_spline=compare_spline)
+            dv = weight * models.fid.volume_element(z, e)
+            for key in matrices:
+                matrices[key] += dv * local_matrices[key]
+            records.append(record | coverage | dict(z=float(z), volume_weight_Mpc3=float(dv)))
+        if (index + 1) % 10 == 0 or index == len(frame) - 1:
+            print(f"[{row.telescope}] Noise bin {index+1}/{len(frame)}", flush=True)
+    coverage = pd.DataFrame(records)
+    queried_volume = float(coverage.volume_weight_Mpc3.sum())
+    supported_volume = float(coverage.loc[coverage.status == "ok", "volume_weight_Mpc3"].sum())
+    instrument_modes = float((coverage.volume_weight_Mpc3 * coverage.instrument_mode_weight).sum())
+    supported_modes = float((coverage.volume_weight_Mpc3 * coverage.supported_mode_weight).sum())
+    summary = dict(
+        status="ok" if supported_modes > 0 else "no_supported_modes",
+        observed_volume_Mpc3=float(observed_volume),
+        queried_volume_Mpc3=queried_volume,
+        supported_volume_fraction=supported_volume / observed_volume if observed_volume else 0.,
+        supported_mode_fraction_queried_z=supported_modes / instrument_modes if instrument_modes else 0.,
+        status_counts={str(k): int(v) for k, v in coverage.status.value_counts().items()},
+    )
+    if compare_spline:
+        fallback_weight = float((coverage.volume_weight_Mpc3
+                                 * coverage.get("spline_fallback_mode_weight", 0.)).sum())
+        summary.update(
+            spline_fallback_quadrature_nodes=int(
+                coverage.get("spline_fallback_quadrature_nodes", pd.Series(dtype=float)).sum()),
+            spline_fallback_mode_weight_fraction=(fallback_weight/supported_modes
+                                                  if supported_modes else 0.),
+            spline_max_abs_relative_A_change=float(
+                coverage.get("spline_max_abs_relative_A_change", pd.Series([0.])).max()))
+    return matrices, coverage, summary
+
+
+def noise_fisher(models, e, frame, cfg, noise):
+    """Original linear-interpolation forecast; spline comparison is opt-in."""
+    matrices, coverage, summary = _noise_fisher(models, e, frame, cfg, noise)
+    return matrices["analytic_common"], matrices["analytic_noise"], coverage, summary
+
+
+def run_survey(name, cfg, models, integrator, noise):
     e = experiment(name, cfg)
     requested, band = redshift_bounds(e)
     edges = bin_edges(*requested, cfg.delta_z)
-    matrices = {key: np.zeros((7,7)) for key in ("analytic_full", "analytic_common", "analytic_mock")}
+    matrices = {key: np.zeros((7,7)) for key in ("analytic_full", "analytic_common", "analytic_noise")}
     rows = []
     for index, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
         obslo, obshi = max(lo, band[0]), min(hi, band[1])
@@ -413,18 +676,6 @@ def run_survey(name, cfg, models, integrator, mock):
                        kperp_max_envelope_Mpc_inv=min(upper,np.sqrt(max(0.,cfg.voxel_kmax**2-kfg**2))),
                        kpar_min_Mpc_inv=kfg,
                        kpar_min_lattice_Mpc_inv=np.ceil(kfg/integrator.fundamental_k)*integrator.fundamental_k)
-            # Clip the redshift integration to data support, never clip a query
-            # redshift to the boundary layer. Both compared Fishers share this domain.
-            if cfg.run_fisher and mock is not None:
-                ml, mh = max(obslo,mock.z[0]), min(obshi,mock.z[-1])
-                if mh>ml:
-                    zz, ww = gauss_interval(ml,mh,cfg.n_z)
-                    for z, weight in zip(zz,ww):
-                        local = dict(e,dnutot=e["nu_line"]/(1+ml)-e["nu_line"]/(1+mh))
-                        fa, fm, _ = fisher_at_z(models,local,z,cfg,mock)
-                        dv = weight*models.fid.volume_element(z,e)
-                        matrices["analytic_common"] += dv*fa
-                        matrices["analytic_mock"] += dv*fm
         rows.append(row)
         if index % 10 == 0 or index == len(edges)-2:
             print(f"[{name}] bin {index+1}/{len(edges)-1}: {row['status']}", flush=True)
@@ -434,14 +685,25 @@ def run_survey(name, cfg, models, integrator, mock):
     frame["t_obs_hours"] = cfg.t_obs_hours
     frame["baseline_source"] = e["baseline_source"]
     frame["variance_estimator"] = "periodic_box_mode_sum"
+    noise_coverage = pd.DataFrame()
+    coverage_summary = dict(status="fisher_disabled")
+    if cfg.run_fisher:
+        fa, fn, noise_coverage, coverage_summary = noise_fisher(models, e, frame, cfg, noise)
+        matrices["analytic_common"] = fa
+        matrices["analytic_noise"] = fn
     prior = planck_fisher()
     constraints = pd.DataFrame(index=PARAMETERS)
     if cfg.run_fisher:
         for label, key in [("sigma_ana_full","analytic_full"),
                            ("sigma_ana_common","analytic_common"),
-                           ("sigma_ana_mock","analytic_mock")]:
+                           ("sigma_ana_noise","analytic_noise")]:
             constraints[label] = sigma_from_fisher(matrices[key])
-            constraints[label+"_cmb"] = sigma_from_fisher(matrices[key]+prior)
+            # Empty HI support must not masquerade as a successful CMB-only forecast.
+            constraints[label+"_cmb"] = (
+                sigma_from_fisher(matrices[key]+prior) if np.any(np.diag(matrices[key]) > 0)
+                else np.full(len(PARAMETERS), np.nan))
+        if coverage_summary["status"] == "ok" and not np.isfinite(constraints["sigma_ana_common"]).all():
+            coverage_summary["status"] = "singular_fisher"
     metadata = dict(config=asdict(cfg), requested_z_bounds=requested, band_z_bounds=band,
                     baseline_source=e["baseline_source"],
                     baseline_has_zero_transitions=e["baseline_has_zero_transitions"],
@@ -451,9 +713,26 @@ def run_survey(name, cfg, models, integrator, mock):
                     fundamental_k_Mpc_inv=integrator.fundamental_k,
                     redshift_statistic="volume-weighted average of finite snapshots at configured Gauss nodes",
                     continuous_edge_integral_may_diverge=e["baseline_has_zero_transitions"],
-                    mock_mode_normalization="deferred by user; extra denominator = fisher_arr * P_HI^2",
-                    mock_redshift_source="variance_audit_20260915/mock_paths.json source filename labels",
-                    mock_outside_support="excluded from both compared Fishers; full analytic separately saved")
+                    noise_coverage=coverage_summary)
+    if noise is not None:
+        metadata.update(
+            noise_source_file=str(Path(cfg.noise_file).resolve()),
+            noise_fingerprint=noise.table.metadata["scientific_fingerprint"],
+            noise_seed_count=int(noise.table.metadata["seed_count"]),
+            noise_A_definition="N_cal * tf_var / (2 * tf_mean**2), at native bins before interpolation",
+            noise_mode_normalization="Already in A; no further N_cal, N_obs or seed-count factor",
+            noise_sigma_source="Saved voxel variance; linear in z_mid, then square root",
+            noise_interpolation="Delaunay linear in (z, log sigma); bilinear in (k_perp, k_parallel)",
+            fisher_analytic_denominator=ANALYTIC_DENOMINATOR,
+            noise_total_denominator=TOTAL_DENOMINATOR,
+            noise_outside_support="Excluded from both common-domain Fishers; full analytic saved separately",
+            noise_model_limitations=[
+                "Analytic covariance is cosmic variance only; calibrated conditional Noise represents the added scatter",
+                "Matching voxel RMS does not reproduce anisotropic instrumental noise power",
+                "Mode-count transfer assumes approximate 1/N scaling and neglects inter-bin covariance",
+                "Recovered f_NL response is approximated by the existing signal derivative",
+            ],
+        )
     out = Path(cfg.output_dir)
     out.mkdir(parents=True, exist_ok=True)
     frame.to_csv(out/f"voxel_noise_{name}.csv",index=False)
@@ -463,25 +742,295 @@ def run_survey(name, cfg, models, integrator, mock):
         constraints.to_csv(out/f"constraints_{name}.csv")
         joblib.dump(dict(parameters=PARAMETERS,matrices=matrices,metadata=metadata),
                     out/f"fisher_{name}.joblib")
+        noise_coverage.to_csv(out/f"noise_coverage_{name}.csv", index=False)
+        print(f"[{name}] Noise coverage: {coverage_summary['status']}; "
+              f"mode fraction={coverage_summary['supported_mode_fraction_queried_z']:.3g}", flush=True)
     return dict(telescope=name,variance_table=frame,constraints=constraints,
-                matrices=matrices,metadata=metadata)
+                matrices=matrices,metadata=metadata,noise_coverage=noise_coverage)
 
 
 def run_all(cfg=None, surveys=None):
     cfg = cfg or Config()
     surveys = SURVEYS if surveys is None else surveys
     integrator = FiniteBoxVoxelIntegrator(cfg.boxsize_mpc_h,cfg.grid_size,cfg.h_mock,cfg.voxel_kmax)
-    mock = MockVariance(cfg) if cfg.run_fisher else None
-    models = SignalModels(cfg)
+    noise = NoiseCalibration(cfg) if cfg.run_fisher else None
+    models = None
     try:
-        results = [run_survey(name,cfg,models,integrator,mock) for name in surveys]
+        models = SignalModels(cfg)
+        results = [run_survey(name,cfg,models,integrator,noise) for name in surveys]
     finally:
-        models.close()
+        if models is not None:
+            models.close()
+        if noise is not None:
+            noise.close()
     out = Path(cfg.output_dir)
     pd.concat([r["variance_table"] for r in results],ignore_index=True).to_csv(
         out/"voxel_noise_all_surveys.csv",index=False)
     (out/"run_config.json").write_text(json.dumps(asdict(cfg),indent=2),encoding="utf-8")
+    if cfg.run_fisher:
+        pd.concat([r["noise_coverage"] for r in results], ignore_index=True).to_csv(
+            out/"noise_coverage_all_surveys.csv", index=False)
+        summary = {r["telescope"]: r["metadata"]["noise_coverage"] for r in results}
+        (out/"noise_calibration_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return results
+
+
+def load_results(cfg, surveys=None):
+    """Read matching saved forecasts without recalculating voxel noise or CLASS."""
+    surveys = SURVEYS if surveys is None else surveys
+    out, results = Path(cfg.output_dir), []
+    for name in surveys:
+        voxel_path = out/f"voxel_noise_{name}.joblib"
+        fisher_path = out/f"fisher_{name}.joblib"
+        if not voxel_path.is_file() or (cfg.run_fisher and not fisher_path.is_file()):
+            raise FileNotFoundError(f"Missing saved results for {name}; run the baseline forecast once.")
+        voxel = joblib.load(voxel_path)
+        saved = joblib.load(fisher_path) if cfg.run_fisher else {}
+        metadata = saved.get("metadata", voxel["metadata"])
+        if metadata["config"] != asdict(cfg) or voxel["metadata"]["config"] != asdict(cfg):
+            raise ValueError("Saved configuration differs from cfg; update the matching inputs first.")
+        if cfg.run_fisher and (metadata.get("fisher_analytic_denominator") != ANALYTIC_DENOMINATOR
+                               or metadata.get("noise_total_denominator") != TOTAL_DENOMINATOR):
+            raise ValueError("Saved Fisher denominator changed; call run_fisher_only(cfg, surveys).")
+        results.append(dict(
+            telescope=name, variance_table=voxel["variance_table"], metadata=metadata,
+            matrices=saved.get("matrices", {}),
+            constraints=(pd.read_csv(out/f"constraints_{name}.csv", index_col="param")
+                         if cfg.run_fisher else pd.DataFrame()),
+            noise_coverage=(pd.read_csv(out/f"noise_coverage_{name}.csv")
+                            if cfg.run_fisher else pd.DataFrame())))
+    return results
+
+
+def _analytic_fisher(models, e, frame, cfg):
+    """Integrate the full instrument domain using saved observed z boundaries."""
+    matrix = np.zeros((len(PARAMETERS), len(PARAMETERS)))
+    for index, row in enumerate(frame.itertuples(index=False)):
+        if row.status == "out_of_band":
+            continue
+        zs, wz = gauss_interval(row.z_obs_low, row.z_obs_high, cfg.n_z)
+        local = dict(e, dnutot=e["nu_line"]/(1+row.z_obs_low)
+                     - e["nu_line"]/(1+row.z_obs_high))
+        for z, weight in zip(zs, wz):
+            analytic, _, _ = fisher_at_z(models, local, z, cfg)
+            matrix += weight*models.fid.volume_element(z, e)*analytic
+        if (index+1) % 20 == 0 or index == len(frame)-1:
+            print(f"[{row.telescope}] Analytic Fisher bin {index+1}/{len(frame)}", flush=True)
+    return matrix
+
+
+def _interpolation_result(name, matrices, summary, prior):
+    """Build both interpolation forecasts from their shared-domain matrices."""
+    constraints = pd.DataFrame(index=PARAMETERS)
+    supported = bool(np.any(np.diag(matrices["analytic_common"]) > 0))
+    for label, key in [("sigma_ana_common", "analytic_common"),
+                       ("sigma_noise_linear", "analytic_noise"),
+                       ("sigma_noise_spline", "analytic_noise_spline")]:
+        constraints[label] = sigma_from_fisher(matrices[key])
+        constraints[label+"_cmb"] = (sigma_from_fisher(matrices[key]+prior)
+                                     if supported else np.full(len(PARAMETERS), np.nan))
+    constraints.index.name = "param"
+    fnl = constraints.loc["f_NL"].to_dict()
+    fnl.update(
+        telescope=name,
+        relative_change_percent=100*(fnl["sigma_noise_spline"]/fnl["sigma_noise_linear"]-1),
+        relative_change_cmb_percent=100*(fnl["sigma_noise_spline_cmb"]/fnl["sigma_noise_linear_cmb"]-1),
+        spline_fallback_mode_fraction=summary["spline_fallback_mode_weight_fraction"])
+    return constraints, fnl
+
+
+def _save_interpolation_comparison(cfg, surveys, records, saved_surveys):
+    """Write one current comparison after the matching baseline has been saved."""
+    comparison = pd.DataFrame(records)
+    comparison = comparison[["telescope"]+[key for key in comparison if key != "telescope"]]
+    out = Path(cfg.output_dir)
+    joblib.dump(dict(
+        fingerprint=_comparison_fingerprint(cfg, surveys), parameters=PARAMETERS,
+        comparison=comparison,
+        methods=dict(linear="Delaunay linear in (z, log sigma); bilinear in k",
+                     spline="Same (z, log sigma); RectBivariateSpline(kx=3, ky=3, s=0) on native A"),
+        normalization="A=N_cal*tf_var/(2*tf_mean**2), before interpolation",
+        spline_fallback="Negative/nonfinite cubic values use linear A; same mode mask; no extrapolation",
+        denominator=TOTAL_DENOMINATOR, surveys=saved_surveys),
+        out/"noise_interpolation_comparison.joblib")
+    comparison.to_csv(out/"noise_interpolation_comparison.csv", index=False)
+    return comparison
+
+
+def run_fisher_only(cfg=None, surveys=None, *, reuse_saved=True):
+    """Update Fisher and both interpolations; never calculate voxel variances.
+
+    Saved voxel tables supply the calibration RMS. The same common-domain
+    quadrature produces the analytic, linear and spline matrices together.
+    Matching results are read directly on subsequent notebook executions.
+    """
+    cfg = cfg or Config()
+    surveys = SURVEYS if surveys is None else surveys
+    if not cfg.run_fisher or cfg.noise_fisher_only:
+        raise ValueError("Fisher-only comparison requires run_fisher=True and the full Noise table.")
+    out = Path(cfg.output_dir)
+    if reuse_saved:
+        try:
+            previous = load_results(cfg, surveys)
+            cached = joblib.load(out/"noise_interpolation_comparison.joblib")
+            if cached.get("fingerprint") == _comparison_fingerprint(cfg, surveys):
+                print("Using saved Fisher forecasts; voxel variances are reused.", flush=True)
+                return previous
+        except (FileNotFoundError, ValueError):
+            pass
+    voxels = {}
+    for name in surveys:
+        path = out/f"voxel_noise_{name}.joblib"
+        voxel = joblib.load(path)
+        if voxel["metadata"]["config"] != asdict(cfg):
+            raise ValueError(f"{name}: saved voxel inputs do not match cfg.")
+        voxels[name] = voxel
+    print("Updating Fisher only: using saved voxel variances and the existing Noise table.", flush=True)
+    noise, models = NoiseCalibration(cfg), None
+    results, records, saved_surveys = [], [], {}
+    prior = planck_fisher()
+    try:
+        models = SignalModels(cfg)
+        for name, voxel in voxels.items():
+            metadata = copy.deepcopy(voxel["metadata"])
+            if metadata["noise_fingerprint"] != noise.table.metadata["scientific_fingerprint"]:
+                raise ValueError("Noise calibration changed; verify the saved voxel-to-Noise matching first.")
+            frame, e = voxel["variance_table"], experiment(name, cfg)
+            full = _analytic_fisher(models, e, frame, cfg)
+            matrices, coverage, summary = _noise_fisher(
+                models, e, frame, cfg, noise, compare_spline=True)
+            compared, fnl = _interpolation_result(name, matrices, summary, prior)
+            saved_surveys[name] = dict(
+                matrices={key: value for key, value in matrices.items()},
+                constraints=compared, coverage_summary=summary,
+                baseline_max_scaled_difference=0.)
+            matrices["analytic_full"] = full
+            constraints = pd.DataFrame(index=PARAMETERS)
+            for label, key in [("sigma_ana_full", "analytic_full"),
+                               ("sigma_ana_common", "analytic_common"),
+                               ("sigma_ana_noise", "analytic_noise"),
+                               ("sigma_ana_noise_spline", "analytic_noise_spline")]:
+                constraints[label] = sigma_from_fisher(matrices[key])
+                constraints[label+"_cmb"] = (
+                    sigma_from_fisher(matrices[key]+prior) if np.any(np.diag(matrices[key]) > 0)
+                    else np.full(len(PARAMETERS), np.nan))
+            constraints.index.name = "param"
+            metadata.update(
+                fisher_analytic_denominator=ANALYTIC_DENOMINATOR,
+                noise_total_denominator=TOTAL_DENOMINATOR, noise_coverage=summary,
+                voxel_variance_reused=True,
+                voxel_source_sha256={str(out/f"voxel_noise_{name}.{suffix}"):
+                    hashlib.sha256((out/f"voxel_noise_{name}.{suffix}").read_bytes()).hexdigest()
+                    for suffix in ["csv", "joblib"]},
+                noise_sigma_source="Saved voxel variance; linear in z_mid, then square root",
+                noise_model_limitations=[
+                    "Analytic covariance is cosmic variance only; conditional Noise represents the added scatter",
+                    "Matching voxel RMS does not reproduce anisotropic instrumental noise power",
+                    "Mode-count transfer assumes approximate 1/N scaling and neglects inter-bin covariance",
+                    "Recovered f_NL response is approximated by the existing signal derivative"])
+            results.append(dict(telescope=name, variance_table=frame, metadata=metadata,
+                                matrices=matrices, constraints=constraints, noise_coverage=coverage))
+            records.append(fnl)
+            print(f"[{name}] f_NL: analytic={fnl['sigma_ana_common']:.6g}, "
+                  f"linear={fnl['sigma_noise_linear']:.6g}, spline={fnl['sigma_noise_spline']:.6g}", flush=True)
+    finally:
+        if models is not None:
+            models.close()
+        noise.close()
+    # Update Fisher outputs together. Voxel CSV/joblib files remain untouched.
+    for result in results:
+        name = result["telescope"]
+        result["constraints"].to_csv(out/f"constraints_{name}.csv")
+        joblib.dump(dict(parameters=PARAMETERS, matrices=result["matrices"],
+                         metadata=result["metadata"]), out/f"fisher_{name}.joblib")
+        result["noise_coverage"].to_csv(out/f"noise_coverage_{name}.csv", index=False)
+    pd.concat([r["noise_coverage"] for r in results], ignore_index=True).to_csv(
+        out/"noise_coverage_all_surveys.csv", index=False)
+    (out/"noise_calibration_summary.json").write_text(json.dumps(
+        {r["telescope"]: r["metadata"]["noise_coverage"] for r in results}, indent=2))
+    _save_interpolation_comparison(cfg, surveys, records, saved_surveys)
+    return results
+
+
+def _comparison_fingerprint(cfg, surveys):
+    """Invalidate comparison results when inputs or relevant calculation code change."""
+    out = Path(cfg.output_dir)
+    paths = [out/f"{kind}_{name}.joblib" for name in surveys
+             for kind in ["fisher", "voxel_noise"]]
+    paths += [NOISE_ROOT/"noise_hkl.py", Path(bf.__file__), Path(ex.__file__)]
+    functions = [Cosmology, SignalModels, NoiseCalibration, experiment,
+                 cylindrical_grid, noise_power, _fisher_at_z, _noise_fisher,
+                 sigma_from_fisher, planck_fisher, _analytic_fisher,
+                 _interpolation_result, _save_interpolation_comparison,
+                 run_fisher_only, compare_noise_interpolations]
+    source = "\n".join(inspect.getsource(function) for function in functions)
+    stat = Path(cfg.noise_file).stat()
+    return dict(
+        schema=2, config=asdict(cfg), surveys=list(surveys),
+        analytic_denominator=ANALYTIC_DENOMINATOR, total_denominator=TOTAL_DENOMINATOR,
+        code_sha256=hashlib.sha256(source.encode()).hexdigest(),
+        inputs_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},
+        noise_file_size=stat.st_size, noise_file_mtime_ns=stat.st_mtime_ns)
+
+
+def compare_noise_interpolations(cfg, surveys=None, *, reuse_saved=True):
+    """Compare linear and cubic A interpolation with shared modes and derivatives.
+
+    Reuse saved voxel variances and the full analytic forecast. Only the
+    common-domain Fisher integration is evaluated, once for both methods.
+    Cache results in two fixed files in the existing output directory.
+    """
+    if not cfg.run_fisher or cfg.noise_fisher_only:
+        raise ValueError("Interpolation comparison requires run_fisher=True and the full Noise table.")
+    surveys = SURVEYS if surveys is None else surveys
+    baseline = load_results(cfg, surveys)
+    fingerprint = _comparison_fingerprint(cfg, surveys)
+    out = Path(cfg.output_dir)
+    cache_path = out/"noise_interpolation_comparison.joblib"
+    csv_path = out/"noise_interpolation_comparison.csv"
+    if reuse_saved and cache_path.is_file():
+        cached = joblib.load(cache_path)
+        if cached.get("fingerprint") == fingerprint:
+            cached["comparison"].to_csv(csv_path, index=False)
+            print("Using saved linear/spline comparison; no Fisher recalculation.", flush=True)
+            return cached["comparison"]
+
+    records, saved_surveys = [], {}
+    noise, models = NoiseCalibration(cfg), None
+    prior = planck_fisher()
+    try:
+        models = SignalModels(cfg)
+        for previous in baseline:
+            name = previous["telescope"]
+            if previous["metadata"]["noise_fingerprint"] != noise.table.metadata["scientific_fingerprint"]:
+                raise ValueError("Noise calibration changed; update the baseline forecast first.")
+            e = experiment(name, cfg)
+            matrices, _, summary = _noise_fisher(
+                models, e, previous["variance_table"], cfg, noise, compare_spline=True)
+            max_change = 0.
+            for key in ["analytic_common", "analytic_noise"]:
+                reference = previous["matrices"][key]
+                scale = np.sqrt(np.maximum(np.diag(reference), np.finfo(float).tiny))
+                change = float(np.max(np.abs(
+                    (matrices[key]-reference)/scale[:, None]/scale[None, :])))
+                max_change = max(max_change, change)
+                if change > 1e-8:
+                    raise ValueError(f"{name}: baseline changed; update it before comparing interpolation.")
+
+            constraints, fnl = _interpolation_result(name, matrices, summary, prior)
+            records.append(fnl)
+            saved_surveys[name] = dict(
+                matrices=matrices, constraints=constraints, coverage_summary=summary,
+                baseline_max_scaled_difference=max_change)
+            print(f"[{name}] f_NL: linear={fnl['sigma_noise_linear']:.6g}, "
+                  f"spline={fnl['sigma_noise_spline']:.6g}; "
+                  f"change={fnl['relative_change_percent']:+.3g}%", flush=True)
+    finally:
+        if models is not None:
+            models.close()
+        noise.close()
+
+    return _save_interpolation_comparison(cfg, surveys, records, saved_surveys)
 
 
 def plot_results(results, output_dir=None):

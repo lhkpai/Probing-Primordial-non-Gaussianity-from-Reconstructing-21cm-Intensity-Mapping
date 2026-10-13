@@ -11,15 +11,8 @@
   "n_z": 2,
   "pk_nodes": 900,
   "run_fisher": true,
-  "mock_file": "/home/liuhk/research/mock_fisher_arr.joblib",
-  "mock_k_unit": "h/Mpc",
-  "mock_redshifts": [
-    0.511,
-    0.989,
-    1.501,
-    2.005,
-    2.501,
-    3.017
-  ],
-  "output_dir": "/home/liuhk/research/outputs_916"
+  "noise_file": "/mnt/xiaodong/luantch/LSS21cm_freeloadXD/PosiRestore/FisherMess/noise_hkl/data/noise_hkl_N200.h5",
+  "noise_wedge": true,
+  "noise_fisher_only": false,
+  "output_dir": "/home/liuhk/research/9.16/outputs_916"
 }

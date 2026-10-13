@@ -1,114 +1,229 @@
-# 9.16 修改与物理核对（2026-09-21 更新）
+# 9.16：宇宙方差基准与 Noise 恢复方差的 Fisher 预测
 
-已在干净 Python 内核中运行完整 notebook。体素方差上限现改为0.363 Mpc⁻¹，
-Fisher上限也统一为0.363 Mpc⁻¹；体素上限修改记录见 `voxel_kmax_update.json`；Δz=0.01 历史运行检查见 `delta_z_update.json`；最新统一上限检查见 `common_kmax_update.json`。数值结果保存在本目录；
-旧 notebook 和原版 baofisher_k 已备份在 `backups/`。
+更新日期：2026-10-13。当前模型按指定公式计算：
 
-## 实现对应关系
+$$
+\boxed{D_{\rm ana}=P_{\rm HI}^2,\qquad
+D_{{\rm total},m}=P_{\rm HI}^2+P_{\rm HI}^2\widetilde A_m,\quad
+m\in\{\mathrm{linear},\mathrm{spline}\}.}
+$$
 
-| 用户需求 | 实现及结果 |
-|---|---|
-| 五个指定干涉配置 | SKA-MID、CHIME、HIRAX、Tianlai、MeerKAT，均已运行 |
-| 红移箱宽 0.01 | 固定步长，保留指定输出边界及原有末箱处理 |
-| 原版横向、径向下限 | 保留基线文件/均匀基线、适用的 FoV 及前景截止 |
-| 独立总波数上限 | 体素方差 `voxel_kmax=0.363`；Fisher `kmax=0.363`，不联动关闭其他限制 |
-| 热噪声体素方差 | 使用 baofisher 的热噪声谱，不加入 Cfg，不再调用单碟辅助方差 |
-| 3000 Mpc/h、512 网格、sinc 窗口 | 盒长按 h_mock=0.6766 换算，体素边长 8.660028 Mpc |
-| 柱坐标 Fisher | 使用 k_perp、正 k_parallel 与正确积分测度；正负模式权重明确 |
-| mock 原二维坐标、单位一致 | 波数由明确配置的 h/Mpc 转为 Mpc⁻¹，三维线性插值(z,p,ell) |
-| 暂不修正模式数归一化 | 保留额外分母 fisher_arr × P_HI²，并在元数据注明 |
-| 保存方差文件 | 每配置 CSV/joblib，加全部配置 CSV 合表 |
+本次复用已有体素方差和 `noise_hkl_N200.h5`，只重新计算 Fisher。
+解析项只保留宇宙方差；仪器噪声仍通过查询 Noise 时使用的 RMS 进入额外方差项。
+本文及同目录结果均采用上述分母。
 
-主 notebook 负责配置、运行和展示；`../forecast_916.py` 放置可测试的预测流程，
-`../voxel_modes_916.py` 放置有限盒子模式求和。原版 `baofisher.py` 未改动。
-`baofisher_k.py` 增加 `noise_k_limits` 和 `interferometer_mode_mask`，
-使物理覆盖可以在积分前明确检查，而不靠极大噪声数值判断。
+## 1. 计算流程与输入
 
-## 积分和方差定义
+日常入口为 [9.16 notebook](../9.16-interferometer-telescopes.ipynb)。
+Notebook 调用 `forecast_916.run_fisher_only(cfg, SURVEYS)`：
 
-热噪声谱采用原有转换：
+1. 读取现有 `voxel_noise_<survey>.joblib`，沿 `z_mid` 线性插值方差，再开平方，取得查询 RMS。
+2. 读取已有 Noise 标定表，在原始分箱归一化，再按红移、RMS 和二维波数插值。
+3. 更新完整仪器域解析 Fisher；共同域只积分一次，同时得到解析、线性 Noise 与 spline Noise 三组矩阵。
+4. 保存新基准、参数误差和插值对比；输入及计算代码匹配时，后续运行直接读取缓存。
 
-$$P_N(p,\ell,z)=r^2r_\nu C_N(rp,r_\nu\ell,z),\qquad
-r_\nu=c(1+z)^2/H(z).$$
+本入口不调用 `voxel_variance` 或 `FiniteBoxVoxelIntegrator`，不重新生成模拟或体素方差。
+`voxel_modes_916.py` 和 `diagnose_noise_916.py` 保留原作用，本次不运行其计算。
 
-原版前景截断仍是模式选择，输出不包含前景残差协方差。Tsky 保留在系统温度中。
+| 配置 | 当前取值 |
+| --- | --- |
+| 红移箱宽 | Δz=0.01，每箱2个 Gauss 节点 |
+| 总波数上限 | k≤0.363 Mpc⁻¹，Fisher 与原体素表一致 |
+| 模拟盒子、网格 | 3000 Mpc/h、512³；h_mock=0.6766 |
+| 已有体素边长 | 8.660028 Mpc |
+| 观测时间 | 100000 小时，沿用已有输入 |
+| Noise 数据 | 完整200×200二维表，`noise_fisher_only=False`、`noise_wedge=True` |
+| 参数 | lnA、Omega_m、omega_b、omega_cdm、n_s、w0、f_NL |
 
-### 为什么采用有限盒子的模式和
+Noise 表位置：
+`/mnt/xiaodong/luantch/LSS21cm_freeloadXD/PosiRestore/FisherMess/noise_hkl/data/noise_hkl_N200.h5`。
+共享 `baofisher_k.py`、`experiments.py` 仍位于原 RadioFisher 目录。
 
-CHIME/Tianlai 的部分相邻基线采样点从零密度变为正密度。原版线性插值使
-边缘附近 n(p) 正比于 p-p0，因此连续体素积分出现 ∫p dp/(p-p0) 的对数发散。
-单个正密度点的噪声仍可有限，原版 Fisher 也不会因此发散，因为其权重随 n² 趋零。
+各配置的实际仪器频段红移边界如下；共同域还会受 Noise 红移与 RMS 支持裁剪。
 
-本实现不改变这些基线边界，不设置人为密度下限。采用用户指定周期盒子的有限模式：
+| 配置 | 仪器 z 下界 | 仪器 z 上界 |
+| --- | ---: | ---: |
+| ska_mid1_interferom | 0.352768 | 3.058303 |
+| chime_icyl | 0.775508 | 2.551015 |
+| hirax_interferom | 0.775508 | 2.551015 |
+| tianlai_icyl | 0.495164 | 1.582556 |
+| meerkat_b1_interferom | 0.399415 | 1.448976 |
 
-$$\sigma_N^2=L_{\rm Mpc}^{-3}\sum_{\mathbf k\in\mathcal D}
-P_N(\mathbf k)|W_{\rm pix}(\mathbf k)|^2,\qquad
-\mathbf k=2\pi\mathbf n/L_{\rm Mpc}.$$
+## 2. Noise 的物理定义与插值
 
-$$|W_{\rm pix}|^2=\prod_i\operatorname{sinc}^2(k_i\Delta/2),\qquad
-\Delta=L_{\rm Mpc}/512.$$
+Noise 表固定每层红移的宇宙信号，改变200个热噪声实现，统计恢复功率的条件散布。
+在每个原始标定分箱先计算：
 
-这是一项明确的有限盒子定义，不是发散连续积分的收敛值。横向整数半径相同的模式
-按精确简并数和窗口权重合并；径向利用原版频道响应的可分离性作累计和。
-它与直接三维求和等价。盒长决定模式间隔，改变盒长可能改变基线边缘贡献。
+$$
+R_b=\frac{\mathrm{tf\_var}_b}{\mathrm{tf\_mean}_b^2},
+\qquad A_b=\frac{N_{{\rm cal},b}}{2}R_b.
+$$
 
-N=512 定义体素平均宽度。本次仅将方差的总波数上限改为0.363，
-候选模式随后应用原版仪器与前景掩码。没有改成512³ FFT数组枚举：
-当前球内最大轴向索引为256，正负Nyquist边界均保留；
-同时球外的FFT对角模式被排除。该球形截断不能等同于完整FFT立方体。
+`N_cal` 是 Fourier 分箱模式数，200是噪声实现数，二者不能混用。
+读取器已完成模式数转换，之后插值 A；不再乘模式数、除样本数或另除观测模式数。
+A 无量纲，体素温度方差的单位为 mK²，二者用途不同。
 
-每个红移箱的输出是配置的有限红移节点上局部方差的体积加权平均；
-不是把整箱温度平均成一个体素后的方差。观测时间不按红移箱数拆分。
+- 两种方案沿 `(z, log sigma)` 使用相同的 Delaunay 线性权重。
+- 线性方案在 `(k_perp, k_parallel)` 上作双线性插值。
+- spline 方案使用 `RectBivariateSpline(kx=3, ky=3, s=0)` 直接插值同一二维 A 面。
+- `s=0` 表示穿过原始标定点，不消除标定值自身的统计散布。
+- 表外不外推；负值或非有限样条值在该点回退到线性值，保留相同模式域。
 
-### Fisher
+Fisher 波数使用 Mpc⁻¹，除以 h_mock 后查询原表的 h/Mpc 坐标。
+两种方案共用相同的归一化、红移权重、输入 RMS 和有效性判断。
 
-正径向半轴的归一化为：
+## 3. Fisher 公式与有效域
 
-$$F_{ij}=\int dz\,\frac{dV/dz}{4\pi^2}
-\int p\,dp\,d\ell\,
-\frac{P_{,i}P_{,j}}{(P_{\rm HI}+P_N)^2+D_{\rm mock}}.$$
+代码保留明确的三项写法：
 
-解析取 D_mock=0；叠加 mock 时暂用 D_mock=f_mock P_HI²。
-体素 sinc 窗口不单独乘进 Fisher 分母；体素方差也不替代逐模式噪声谱。
+```python
+denom_ana = p_hi**2
+denom_noise = p_hi**2 * a_noise
+denom_total = denom_ana + denom_noise
+```
 
-横向积分在基线文件的插值节点处分段，避免全局网格漏掉圆柱阵列的密度变化。
-CLASS 宇宙学在所有红移间复用；原有信号模型、参数步长和 CMB 先验保留。
-Fisher 采用尺度归一化后的正定性检查和求逆，不再用 abs(diag(cov)) 隐藏异常。
+其中 P_HI 为 HI 温度功率谱，单位 mK² Mpc³；D 的单位为 mK⁴ Mpc⁶。
+正 k_parallel 半轴上的 Fisher 公式为：
 
-## 红移、mock 和剩余物理假设
+$$
+F_{ij}^{(m)}=\int dz\,\frac{dV/dz}{4\pi^2}
+\int_{\mathcal D(z),\,k_\parallel>0}
+ k_\perp\,dk_\perp\,dk_\parallel\,
+\frac{P_{,i}P_{,j}}{D_m},
+\qquad P_{,i}=\frac{\partial P_{\rm HI}}{\partial\theta_i}.
+$$
 
-- 输出仍覆盖旧红移边界，但真实频段外不能外推仪器观测。最新分箱数量见
-  `execution_summary.json`；频段外保存 NaN。Fisher只使用实际覆盖体积。
-- mock 的六层红移采用原始产品路径标签：0.511、0.989、1.501、2.005、2.501、3.017。
-  来源为 `../variance_audit_20260915/mock_paths.json`，不再用名义 linspace(0.5,3,6)。
-- 旧 mock 导出文件缺乏单位元数据。本次沿用已讨论的 h/Mpc 与 h_mock=0.6766，
-  将该假设作为显式配置保存，而不换用 Fisher 宇宙学 h≈0.67197。
-- mock 域外不填零、不夹取红移端点。`sigma_ana_common` 和 `sigma_ana_mock`
-  使用相同的模式与红移域；`sigma_ana_full` 是完整仪器分析域的独立参考。
-- HIRAX基线文件仍缺失，使用6–200 m均匀基线模型。Tianlai继续使用原notebook的圆柱几何补充参数。
-- 模式数归一化、原mock噪声档位平均、不同仪器的恢复误差标定未在此次修改。
-  因此解析加mock是当前指定方差模型的结果，不应称为已经完整校准的实际恢复约束。
+观测模式数已经由体积和积分测度计入；体素窗口不再单独乘入 Fisher。
+参数误差为 $\sigma_i=\sqrt{(F^{-1})_{ii}}$，下表的 f_NL 误差均对其他六个参数边缘化。
+CMB 组合沿用原7×7先验，使用 $F_{\rm HI}+F_{\rm CMB}$。
 
-## 验证结果
+### 两个模式域
 
-`verify_916.py` 与 `validation.json` 保存原始数值算法验证；以下精度数字来自该历史验证。
-当前分箱更新检查见 `check_dz001.py`、`delta_z_update.json`。
+- **full**：现有仪器基线、FoV、径向模式掩码与总 k 上限的交集。
+- **common**：full 再与 Noise 的红移、RMS、二维波数有效支持取交集。
 
-- 未指定新上限时，新旧 Cnoise 在五个配置的验证网格上逐元素一致。
-- 有限盒子分组求和与独立三维暴力求和相对误差约1.1×10⁻¹⁶；模式数完全一致。
-- 常量谱的柱坐标与球坐标 Fisher 归一化相对误差约3.2×10⁻⁸。
-- 五个配置观测时间增加十倍，体素方差均降为十分之一。
-- 在 z=1 将 Fisher 积分精度加倍，所有参数误差最大变化小于0.07%，
-  f_NL误差最大变化小于0.022%。这是一组代表红移的检查，不是所有模型系统误差的界限。
-- 信号谱插值对直接 CLASS 结果的检查误差小于1.3×10⁻⁸。
-- mock插值节点值一致，域外查询被拒绝；加入非负mock项不增加Fisher信息。
-- 整本notebook在干净内核完成执行，零异常输出；正式约束表全部为有限值。
+Noise 分箱中心的物理波数范围为：
 
-## 主要输出
+$$
+0.002696108\le k_\perp\le0.511754277,\qquad
+0.002320448\le |k_\parallel|\le0.361865957
+\quad[\mathrm{Mpc}^{-1}].
+$$
 
-- `voxel_noise_all_surveys.csv`：全部方差结果。
-- `voxel_noise_<survey>.csv/.joblib`：每配置方差及元数据。
-- `constraints_<survey>.csv`：三种域/方差设置及各自联合CMB的参数误差。
-- `fisher_<survey>.joblib`：Fisher矩阵和参数顺序。
-- `voxel_noise_all_surveys.png`：噪声方差和有效基线覆盖比例。
-- `execution_summary.json`：整本运行和输出检查。
+实际积分同时满足总 $k\le0.363\,\mathrm{Mpc}^{-1}$ 及仪器掩码。
+原39个低 k 箱是筛选子集，不是完整表的有效边界；本次使用完整表。
+无支持点从共同域解析、线性和样条三个对照同时排除，不外推、不填零误差。
+
+### 新分母的直接物理含义
+
+$$
+\boxed{\frac{D_{\rm Noise}}{D_{\rm ana}}=\widetilde A,\qquad
+\frac{\text{加入 Noise 后的单模信息}}{\text{解析单模信息}}
+=\frac{1}{1+\widetilde A}.}
+$$
+
+因此 A=1 时，该模式的信息减半。只有 A 对所有相关模式近似恒定时，
+才可用 $\sigma_{\rm total}/\sigma_{\rm ana}\simeq\sqrt{1+A}$ 估计整体误差。
+实际结果还取决于模式权重和参数简并，应使用完整矩阵求逆。
+
+## 4. 当前计算结果
+
+### 未加入 CMB 先验
+
+“Noise增幅”相对于同一共同域解析基准，采用线性 Noise 结果；
+“样条变化”为100×(σ_spline/σ_linear−1)。样条结果包含上述负值回退处理。
+
+| 配置 | full解析 σ(f_NL) | common解析 | common+Noise线性 | common+Noise样条 | Noise增幅 | 样条变化 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| ska_mid1_interferom | 1.953435 | 2.109672 | 2.979951 | 2.979170 | 41.252% | -0.026210% |
+| chime_icyl | 5.320599 | 5.374055 | 7.266411 | 7.264561 | 35.213% | -0.025463% |
+| hirax_interferom | 4.637722 | 4.835972 | 5.995677 | 5.994833 | 23.981% | -0.014089% |
+| tianlai_icyl | 26.204752 | 26.490674 | 29.119425 | 29.117761 | 9.923% | -0.005715% |
+| meerkat_b1_interferom | 47.317609 | 47.465332 | 66.924487 | 66.906332 | 40.997% | -0.027128% |
+
+### 加入原 CMB 先验
+
+| 配置 | common解析+CMB | 线性Noise+CMB | 样条Noise+CMB | Noise增幅 | 样条变化 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ska_mid1_interferom | 1.527639 | 2.060863 | 2.060404 | 34.905% | -0.022300% |
+| chime_icyl | 3.084033 | 3.619203 | 3.618794 | 17.353% | -0.011292% |
+| hirax_interferom | 2.869620 | 3.312395 | 3.312072 | 15.430% | -0.009753% |
+| tianlai_icyl | 4.887300 | 4.913358 | 4.913343 | 0.533% | -0.000299% |
+| meerkat_b1_interferom | 5.006416 | 5.043796 | 5.043773 | 0.747% | -0.000462% |
+
+### 结果解释
+
+加入 Noise 后，未加 CMB 的共同域 f_NL 误差增大约10%–41%。
+线性与 spline 的差异仍很小，最大约0.0272%；加入原 CMB 先验后最大约0.0223%。
+当前预测对这两种插值选择不敏感，光滑程度本身不能证明样条更准确。
+
+full 与 common 的差异反映有效域裁剪，不能当作 Noise 引起的误差增加。
+本次保持原信号导数和仪器掩码，未另行扩大到仪器直接覆盖之外的恢复模式。
+
+回退占比按体积和 $k_\perp\,dk_\perp\,dk_\parallel$ 测度加权，不是 f_NL 信息占比：
+
+| 配置 | 样条回退模式权重占比 |
+| --- | ---: |
+| ska_mid1_interferom | 0.0000000% |
+| chime_icyl | 0.0000079% |
+| hirax_interferom | 0.0001022% |
+| tianlai_icyl | 0.0047132% |
+| meerkat_b1_interferom | 0.0000000% |
+
+## 5. 验证和物理适用范围
+
+本次检查：
+
+- notebook 在干净内核中完成，所有五个配置的参数误差均有限，无错误输出。
+- 原体素 CSV/joblib、共享源码和配置共18个受保护文件的 SHA256 保持不变。
+- 新基准与插值对比使用同次计算的共同域矩阵；序列化矩阵、CSV 和参数误差核对一致。
+- 五个配置均满足：共同域解析信息不超过完整域解析信息，加入非负 Noise 不增加信息。
+- 通过40,000个原生节点还原、域外拒绝和负样条回退检查。
+- 在代表红移 HIRAX z=2.501，用对数功率谱导数独立重建三种 Fisher 分母；
+  验证时禁止调用热噪声功率和体素方差计算。
+
+独立解析矩阵的最大归一化差异为 2.34e-16；
+求积加密后，三组参数误差的最大相对变化为 1.24e-05。
+本次干净内核执行耗时 1701.3 秒；后续匹配缓存时直接读取。
+
+数值表的末位差别用于同节点对比，不代表已验证相同位数的物理精度。
+本次只重新执行 Fisher 相关验证；未变化的体素几何与读取器验证记录沿用已有结果。
+
+物理适用范围：
+
+- Noise 是固定宇宙信号下的条件散布；当前采用宇宙方差与该条件方差的对角叠加近似。
+- 白噪声体素 RMS 匹配不等于完整的各向异性仪器噪声谱匹配。
+- 模式数迁移采用近似1/N缩放，忽略箱间协方差；完整表之外不外推。
+- 恢复后的 f_NL 响应仍用现有 HI 信号导数近似，尚需独立模拟标定。
+- HIRAX 缺少基线文件，继续使用6–200 m均匀基线模型。
+
+## 6. 输出与运行方式
+
+| 文件 | 内容 |
+| --- | --- |
+| `voxel_noise_<survey>.csv/.joblib` | 复用的体素方差输入，未重新计算或重写 |
+| `constraints_<survey>.csv` | full解析、common解析、线性Noise、样条Noise及各自CMB组合 |
+| `fisher_<survey>.joblib` | 四组矩阵、参数顺序、新分母定义和复用体素文件的哈希 |
+| `noise_interpolation_comparison.csv/.joblib` | 两种插值的 f_NL 对比、全部参数误差及缓存指纹 |
+| `noise_coverage_<survey>.csv`及合表 | RMS、支持状态、模式覆盖和Noise/解析比值 |
+| `noise_calibration_summary.json` | 各配置的覆盖与回退汇总 |
+| `validation.json`、`execution_summary.json` | 数值验证、配置及保存结果一致性 |
+
+体素文件保留其生成时的元数据；本次 Fisher 定义以 `fisher_<survey>.joblib` 为准。
+体素合表仍为988行，843行在实际频段内；频段外的 NaN 表示没有观测数据。
+
+日常只需运行 notebook。需要明确强制更新 Fisher 时可调用：
+
+```python
+results = run_fisher_only(cfg, SURVEYS, reuse_saved=False)
+```
+
+该调用仍然复用体素输入。相关验证命令：
+
+```bash
+/software/anaconda3/bin/python3 tests/verify_916.py --fisher-only
+/software/anaconda3/bin/python3 tests/check_common_kmax.py
+```
+
+当前代码和结果统一在 `9.16/`，结果只保存在其 `outputs_916/` 子目录。
+GitHub 的 `9.16` 目录随本次更新同步代码、notebook、结果及本文。

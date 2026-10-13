@@ -1,6 +1,6 @@
 """Check redshift smoothness and additive total-k floors for the 9.16 forecast.
 
-Run from any directory: python /home/liuhk/research/diagnose_noise_916.py
+Run from any directory: python /home/liuhk/research/9.16/diagnose_noise_916.py
 Only diagnostic outputs are written; the forecast tables are never overwritten.
 The baseline is the existing finite-box sum, not a different FFT-grid estimator.
 """
@@ -473,14 +473,15 @@ def report(smooth, cuts, jumps, fine, out, cfg):
 
 
 def main():
+    output_root = Path(forecast.Config().output_dir)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir",type=Path,default=forecast.ROOT/"outputs_916/noise_diagnostics")
+    parser.add_argument("--output-dir",type=Path,default=output_root/"noise_diagnostics")
     parser.add_argument("--surveys",nargs="+",choices=forecast.SURVEYS,default=forecast.SURVEYS)
     parser.add_argument("--fine-points",type=int,default=81)
     args = parser.parse_args()
     if args.fine_points < 3:
         parser.error("--fine-points must be at least 3")
-    cfg_data = json.loads((forecast.ROOT/"outputs_916/run_config.json").read_text())
+    cfg_data = json.loads((output_root/"run_config.json").read_text())
     cfg = forecast.Config(**cfg_data)
     if cfg.kmax != cfg.voxel_kmax:
         raise ValueError("Run the forecast with matching Fisher and voxel kmax first.")

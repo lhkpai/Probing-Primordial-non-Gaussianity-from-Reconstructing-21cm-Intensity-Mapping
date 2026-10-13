@@ -1,0 +1,75 @@
+{
+  "ska_mid1_interferom": {
+    "status": "ok",
+    "observed_volume_Mpc3": 712311940714.8785,
+    "queried_volume_Mpc3": 696312154387.7238,
+    "supported_volume_fraction": 0.9775382309173459,
+    "supported_mode_fraction_queried_z": 0.9946103990607741,
+    "status_counts": {
+      "ok": 524,
+      "out_of_band": 29,
+      "outside_redshift_support": 9
+    },
+    "spline_fallback_quadrature_nodes": 0,
+    "spline_fallback_mode_weight_fraction": 0.0,
+    "spline_max_abs_relative_A_change": 0.24083044338140788
+  },
+  "chime_icyl": {
+    "status": "ok",
+    "observed_volume_Mpc3": 502236395997.40564,
+    "queried_volume_Mpc3": 500797353973.65845,
+    "supported_volume_fraction": 0.9971347317016136,
+    "supported_mode_fraction_queried_z": 0.9986780734038032,
+    "status_counts": {
+      "ok": 356,
+      "out_of_band": 29
+    },
+    "spline_fallback_quadrature_nodes": 33,
+    "spline_fallback_mode_weight_fraction": 7.892226715238966e-08,
+    "spline_max_abs_relative_A_change": 0.9980986723462039
+  },
+  "hirax_interferom": {
+    "status": "ok",
+    "observed_volume_Mpc3": 414374771642.5244,
+    "queried_volume_Mpc3": 413187476745.6864,
+    "supported_volume_fraction": 0.9811501812820322,
+    "supported_mode_fraction_queried_z": 0.9852690243205661,
+    "status_counts": {
+      "ok": 350,
+      "out_of_band": 29,
+      "outside_z_sigma_support": 6
+    },
+    "spline_fallback_quadrature_nodes": 708,
+    "spline_fallback_mode_weight_fraction": 1.0223363501968795e-06,
+    "spline_max_abs_relative_A_change": 0.999845788741784
+  },
+  "tianlai_icyl": {
+    "status": "ok",
+    "observed_volume_Mpc3": 94106047107.67403,
+    "queried_volume_Mpc3": 94020551774.64395,
+    "supported_volume_fraction": 0.9948920598173341,
+    "supported_mode_fraction_queried_z": 0.9957490954943577,
+    "status_counts": {
+      "ok": 217,
+      "out_of_band": 29,
+      "outside_z_sigma_support": 3
+    },
+    "spline_fallback_quadrature_nodes": 9318,
+    "spline_fallback_mode_weight_fraction": 4.713239659290906e-05,
+    "spline_max_abs_relative_A_change": 0.9999803979680302
+  },
+  "meerkat_b1_interferom": {
+    "status": "ok",
+    "observed_volume_Mpc3": 40913101870.02926,
+    "queried_volume_Mpc3": 40881995977.42131,
+    "supported_volume_fraction": 0.9992397082795931,
+    "supported_mode_fraction_queried_z": 0.9988059554340988,
+    "status_counts": {
+      "ok": 212,
+      "out_of_band": 29
+    },
+    "spline_fallback_quadrature_nodes": 0,
+    "spline_fallback_mode_weight_fraction": 0.0,
+    "spline_max_abs_relative_A_change": 0.25955951873284594
+  }
+}

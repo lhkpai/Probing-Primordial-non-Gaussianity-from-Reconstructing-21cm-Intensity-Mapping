@@ -1,0 +1,31 @@
+{
+  "finite_box_bruteforce_relative_error": 1.1102230246251565e-16,
+  "constant_spectrum_coordinate_relative_error": 3.140166637827235e-08,
+  "spline_native_nodes_checked": 40000,
+  "spline_same_valid_domain": true,
+  "spline_negative_overshoot_fallback_nodes": 20,
+  "spline_outside_support_rejected": true,
+  "signal_interpolation_max_relative_error": 1.227230428391124e-08,
+  "noise_native_bins_checked": 39,
+  "noise_normalized_before_interpolation": true,
+  "noise_outside_support_rejected": true,
+  "noise_full_table_high_k_supported": true,
+  "noise_optimized_reader_queries_checked": 3042,
+  "noise_optimized_reader_max_relative_difference": 4.440892098500626e-16,
+  "fisher_only": {
+    "denominator": "P_HI**2 + P_HI**2 * A_noise_conditional",
+    "telescope": "hirax_interferom",
+    "z": 2.501,
+    "covariance_verified_independently": true,
+    "analytic_max_scaled_difference": 2.34494515657423e-16,
+    "voxel_variances_not_calculated": true,
+    "thermal_power_not_used_in_fisher": true,
+    "noise_does_not_increase_information": true,
+    "refinement_max_relative_sigma_change": {
+      "analytic_common": 1.2371030436719721e-05,
+      "analytic_noise": 1.2006607063463903e-05,
+      "analytic_noise_spline": 1.1844977646502386e-05
+    },
+    "voxel_validation_reused": true
+  }
+}

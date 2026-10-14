@@ -70,6 +70,55 @@ $\{\ln A,\Omega_m,\omega_b,\omega_{\rm cdm},n_s,w_0,f_{\rm NL}\}$；$f_{\rm NL}$
 各望远镜红移边界与配置保持不变。体素标定均沿用总 $k$ 上限 0.363、
 盒长 $3000\,h^{-1}\mathrm{Mpc}$、$512^3$ 网格及 $h=0.6766$ 的已有文件；改变 Fisher 截断不重新计算图像 RMS。
 
+### 1.1 当前 C 配置的三个波数范围：z=1
+
+下表为当前 $k_{\max}=0.2$、$k_{\parallel,\max}=0.01$ 配置在 **$z=1$、full 仪器域**中的有效范围包络。
+全部为共动波数，单位均为 $\mathrm{Mpc}^{-1}$；已计入基线密度的有效支持和原有 FoV 截断。
+
+| 望远镜 | $\lvert k_\parallel\rvert$ 范围 | $k_\perp$ 有效范围包络 | 总 $k$ 范围 |
+| --- | ---: | ---: | ---: |
+| SKA-MID | 0.001282–0.010000 | 0.065472–0.199996 | 0.065484–0.200000 |
+| CHIME | 0.002243–0.010000 | 0.085501–0.199987 | 0.085531–0.200000 |
+| HIRAX | 0.002243–0.010000 | 0.026189–0.199987 | 0.026285–0.200000 |
+| Tianlai | 0.002243–0.010000 | 0.062649–0.199987 | 0.062689–0.200000 |
+| MeerKAT | 0.002063–0.010000 | 0.058925–0.199989 | 0.058961–0.200000 |
+
+这些上下限**不能任意组合成一个矩形积分域**；每个模式还必须同时满足：
+
+$$
+\boxed{
+k_\perp^2+k_\parallel^2\le0.2^2,\qquad
+\lvert k_\parallel\rvert\le0.01,\qquad n(u)>0,
+\quad u=\frac{k_\perp r(z)}{2\pi}.
+}
+$$
+
+径向下限和由此得到的横向上限为：
+
+$$
+\begin{aligned}
+q_{\min}(z)&=\frac{2\pi\nu_{\rm line}}
+{\Delta\nu_{\rm survey}\,r_\nu(z)}\,k_{\rm fg,fac},\\
+p_{\max}(z)&=\min\!\left[p_{\rm inst,max}(z),
+\sqrt{0.2^2-q_{\min}^2(z)}\right],\\
+k_{\min}(z)&=\sqrt{[p_{\min}^{+}(z)]^2+q_{\min}^2(z)}.
+\end{aligned}
+$$
+
+其中 $p=k_\perp$、$q=\lvert k_\parallel\rvert$；$p_{\min}^{+}$ 是同时满足基线正密度及 FoV 条件的横向下边界，
+$p_{\rm inst,max}$ 是仪器基线支持的横向上边界。表中边界保留六位小数；零密度边界点本身不参与积分。
+CHIME/Tianlai 的低端有零密度区，因此不能直接把基线文件的第一个横坐标当作有效下限。
+HIRAX 仍采用 $D_{\min}=6$ m、$D_{\max}=200$ m 的均匀基线假设。
+
+**适用范围：**
+
+- 上下限随红移变化；本表只对应 $z=1$，不是各望远镜所有红移共用的边界。
+- common 域还须与 Noise 标定支持取交集。在红移和输入 RMS 有效时，$z=1$ 的 common 径向下限约为
+  $0.00232045\,\mathrm{Mpc}^{-1}$；本表列出的 full 下限不直接替代 common 下限。
+- 功率比图固定 $k_\parallel=0.005\,\mathrm{Mpc}^{-1}$，其最低总波数为
+  $\sqrt{[p_{\min}^{+}]^2+0.005^2}$；离散绘图采样的首个有效点还会略高于这个边界。
+  因此图中的起点与本表总 $k$ 下限不完全相同。
+
 ## 2. 主要对比：解析 σ(f_NL)，common 域、未加 CMB
 
 表中“B/A”“C/B”均为新误差除以旧误差，越大表示约束变弱越多。
@@ -250,9 +299,9 @@ HI 信息很弱时，联合结果趋近这一数值；接近 5.10 主要由既�
   及同目录 joblib；另与原“不含热噪声”保存快照核对一致。
 - **B**：2026-10-14 14:22、加入径向上限前保留的计算快照
   `/tmp/916_before_kpar01.joblib`。本次比较所用的 f_NL 数值已列入本文；
-  纯解析 common 值另与 [implementation_notes.md 第1.4节](implementation_notes.md#14-径向上限改变前后的解析约束) 一致。
-- **C**：当前 [fisher_denominator_comparison.csv](fisher_denominator_comparison.csv)、
-  同名 joblib 与 [run_config.json](run_config.json)；对应 GitHub 提交
+  纯解析 common 值另与 [implementation_notes.md 第1.4节](https://github.com/lhkpai/Probing-Primordial-non-Gaussianity-from-Reconstructing-21cm-Intensity-Mapping/blob/a053e4ee5e1aa623e0695f46445bc9334bab2245/9.16/outputs_916/implementation_notes.md#14-径向上限改变前后的解析约束) 一致。
+- **C**：当前 [fisher_denominator_comparison.csv](https://github.com/lhkpai/Probing-Primordial-non-Gaussianity-from-Reconstructing-21cm-Intensity-Mapping/blob/a053e4ee5e1aa623e0695f46445bc9334bab2245/9.16/outputs_916/fisher_denominator_comparison.csv)、
+  同名 joblib 与 [run_config.json](https://github.com/lhkpai/Probing-Primordial-non-Gaussianity-from-Reconstructing-21cm-Intensity-Mapping/blob/a053e4ee5e1aa623e0695f46445bc9334bab2245/9.16/outputs_916/run_config.json)；对应 GitHub 提交
   [`a053e4e`](https://github.com/lhkpai/Probing-Primordial-non-Gaussianity-from-Reconstructing-21cm-Intensity-Mapping/commit/a053e4ee5e1aa623e0695f46445bc9334bab2245)。
 
 核对了三组共 **30 组 f_NL 结果**，并从已有矩阵复算了
@@ -261,4 +310,4 @@ HI 信息很弱时，联合结果趋近这一数值；接近 5.10 主要由既�
 五套体素标定、Noise 模块及望远镜配置文件的记录哈希一致，Noise 数据文件的记录路径、大小和修改时间一致。
 
 本文覆盖最近三组使用同一完整 Noise 表的双分母运行。更早总 k 上限 0.535 的阶段伴随 Noise 接入等其他变更，未混入本次截断对照。
-本次仅新增本 Markdown 报告，保留现有主程序、notebook 和运行结果。
+本文仅整理已有结果与模式范围，不重新计算 Fisher 或体素方差。

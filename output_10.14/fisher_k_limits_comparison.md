@@ -56,6 +56,9 @@ F_{ij}=\int dz\,\frac{dV/dz}{4\pi^2}
 \sigma(f_{\rm NL})=\sqrt{(F^{-1})_{f_{\rm NL}f_{\rm NL}}}.
 $$
 
+各表的公式备注中，$F_{\rm common}[D]$、$F_{\rm full}[D]$ 分别表示在对应模式域、以 $D$ 为分母的 HI Fisher 矩阵，
+$f$ 简记 $f_{\rm NL}$。A/B/C 分别使用本节列出的三组波数上限；$m$ 表示 linear 或 spline。
+
 本文所有误差均对其余六个参数边缘化。参数顺序为
 $\{\ln A,\Omega_m,\omega_b,\omega_{\rm cdm},n_s,w_0,f_{\rm NL}\}$；$f_{\rm NL}$ 及其误差无量纲。
 
@@ -126,6 +129,13 @@ HIRAX 仍采用 $D_{\min}=6$ m、$D_{\max}=200$ m 的均匀基线假设。
 
 ### 2.1 解析含热噪声：D_ana=(P_HI+P_N)²
 
+**公式备注：**
+
+$$
+D_{\rm ana}=(P_{\rm HI}+P_N)^2,\qquad
+\sigma_{\rm ana}=\sqrt{\left(F_{\rm common}[D_{\rm ana}]^{-1}\right)_{ff}}.
+$$
+
 | 望远镜 | A：k≤0.363 | B：k≤0.2 | C：再限 k∥≤0.01 | B/A | C/B |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | SKA-MID | 40.2700 | 41.7090 | 94.1607 | 1.0357 | 2.2576 |
@@ -135,6 +145,13 @@ HIRAX 仍采用 $D_{\min}=6$ m、$D_{\max}=200$ m 的均匀基线假设。
 | MeerKAT | 442.5503 | 508.9351 | 3495.4868 | 1.1500 | 6.8682 |
 
 ### 2.2 解析不含热噪声：D_ana=P_HI²
+
+**公式备注：**
+
+$$
+D_{\rm ana}=P_{\rm HI}^2,\qquad
+\sigma_{\rm ana}=\sqrt{\left(F_{\rm common}[D_{\rm ana}]^{-1}\right)_{ff}}.
+$$
 
 | 望远镜 | A：k≤0.363 | B：k≤0.2 | C：再限 k∥≤0.01 | B/A | C/B |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -151,6 +168,16 @@ Noise 增幅定义为 $100(\sigma_{\rm linear}/\sigma_{\rm ana,common}-1)\%$。
 为显示两种插值的小差别，本节 σ 保留五位小数。
 
 ### 3.1 解析含热噪声
+
+**公式备注：** 三个结果列依次对应 $j=\mathrm{ana},\mathrm{linear},\mathrm{spline}$。
+
+$$
+\begin{aligned}
+D_{\rm ana}&=(P_{\rm HI}+P_N)^2,\\
+D_m&=(P_{\rm HI}+P_N)^2+P_{\rm HI}^2\widetilde A_m,\\
+\sigma_j&=\sqrt{\left(F_{\rm common}[D_j]^{-1}\right)_{ff}}.
+\end{aligned}
+$$
 
 | 运行 · 望远镜 | 解析 | ＋Noise 线性 | ＋Noise spline | Noise 增幅 |
 | --- | ---: | ---: | ---: | ---: |
@@ -171,6 +198,16 @@ Noise 增幅定义为 $100(\sigma_{\rm linear}/\sigma_{\rm ana,common}-1)\%$。
 | C · MeerKAT | 3495.48681 | 3567.01858 | 3566.95408 | 2.046% |
 
 ### 3.2 解析不含热噪声
+
+**公式备注：** 三个结果列依次对应 $j=\mathrm{ana},\mathrm{linear},\mathrm{spline}$。
+
+$$
+\begin{aligned}
+D_{\rm ana}&=P_{\rm HI}^2,\\
+D_m&=P_{\rm HI}^2+P_{\rm HI}^2\widetilde A_m,\\
+\sigma_j&=\sqrt{\left(F_{\rm common}[D_j]^{-1}\right)_{ff}}.
+\end{aligned}
+$$
 
 | 运行 · 望远镜 | 解析 | ＋Noise 线性 | ＋Noise spline | Noise 增幅 |
 | --- | ---: | ---: | ---: | ---: |
@@ -208,6 +245,16 @@ Noise 增幅定义为 $100(\sigma_{\rm linear}/\sigma_{\rm ana,common}-1)\%$。
 
 ### 4.1 解析含热噪声＋CMB
 
+**公式备注：** $j=\mathrm{ana},\mathrm{linear},\mathrm{spline}$，在对应 HI Fisher 上加同一 CMB 先验。
+
+$$
+\begin{aligned}
+D_{\rm ana}&=(P_{\rm HI}+P_N)^2,\\
+D_m&=(P_{\rm HI}+P_N)^2+P_{\rm HI}^2\widetilde A_m,\\
+\sigma_{j+\mathrm{CMB}}&=\sqrt{\left[\left(F_{\rm common}[D_j]+F_{\rm CMB}\right)^{-1}\right]_{ff}}.
+\end{aligned}
+$$
+
 | 运行 · 望远镜 | 解析＋CMB | Noise 线性＋CMB | Noise spline＋CMB |
 | --- | ---: | ---: | ---: |
 | A · SKA-MID | 5.03526 | 5.03666 | 5.03666 |
@@ -227,6 +274,16 @@ Noise 增幅定义为 $100(\sigma_{\rm linear}/\sigma_{\rm ana,common}-1)\%$。
 | C · MeerKAT | 5.09987 | 5.09988 | 5.09988 |
 
 ### 4.2 解析不含热噪声＋CMB
+
+**公式备注：** $j=\mathrm{ana},\mathrm{linear},\mathrm{spline}$，在对应 HI Fisher 上加同一 CMB 先验。
+
+$$
+\begin{aligned}
+D_{\rm ana}&=P_{\rm HI}^2,\\
+D_m&=P_{\rm HI}^2+P_{\rm HI}^2\widetilde A_m,\\
+\sigma_{j+\mathrm{CMB}}&=\sqrt{\left[\left(F_{\rm common}[D_j]+F_{\rm CMB}\right)^{-1}\right]_{ff}}.
+\end{aligned}
+$$
 
 | 运行 · 望远镜 | 解析＋CMB | Noise 线性＋CMB | Noise spline＋CMB |
 | --- | ---: | ---: | ---: |
@@ -260,6 +317,13 @@ HI 信息很弱时，联合结果趋近这一数值；接近 5.10 主要由既�
 
 ### 5.1 解析含热噪声
 
+**公式备注：**
+
+$$
+D_{\rm ana}=(P_{\rm HI}+P_N)^2,\qquad
+\sigma_{\rm ana,full}=\sqrt{\left(F_{\rm full}[D_{\rm ana}]^{-1}\right)_{ff}}.
+$$
+
 | 望远镜 | A：k≤0.363 | B：k≤0.2 | C：再限 k∥≤0.01 |
 | --- | ---: | ---: | ---: |
 | SKA-MID | 38.1241 | 39.4679 | 83.4866 |
@@ -269,6 +333,13 @@ HI 信息很弱时，联合结果趋近这一数值；接近 5.10 主要由既�
 | MeerKAT | 441.1887 | 507.5362 | 3425.5259 |
 
 ### 5.2 解析不含热噪声
+
+**公式备注：**
+
+$$
+D_{\rm ana}=P_{\rm HI}^2,\qquad
+\sigma_{\rm ana,full}=\sqrt{\left(F_{\rm full}[D_{\rm ana}]^{-1}\right)_{ff}}.
+$$
 
 | 望远镜 | A：k≤0.363 | B：k≤0.2 | C：再限 k∥≤0.01 |
 | --- | ---: | ---: | ---: |

@@ -43,6 +43,32 @@ $$
 
 $P_{\rm HI}$ 为 HI 温度功率谱，$P_N$ 为仪器热噪声功率谱；
 $\widetilde A_m$ 为完整 $200\times200$ Noise 表经模式数归一化转换、插值后的无量纲额外恢复方差。
+
+**$\widetilde A_m$ 的来源：先在原始分箱上转换，再插值。** 令 $b$ 表示 Noise 表的原始二维波数分箱：
+
+$$
+\begin{aligned}
+R_b&=\frac{\mathrm{tf\_var}_b}{\mathrm{tf\_mean}_b^2},
+& A_b&=\frac{N_{{\rm cal},b}}{2}\,R_b,\\
+\widetilde A_m(\mathbf k,z)
+&=\mathcal I_m[A_b]\!\left(
+z,\sigma_a(z),\frac{k_\perp}{h_{\rm mock}},
+\frac{\lvert k_\parallel\rvert}{h_{\rm mock}}\right),\\
+D_{{\rm Noise},m}&=P_{\rm HI}^2\widetilde A_m.
+\end{aligned}
+$$
+
+- `tf_mean`、`tf_var` 是固定宇宙场、改变热噪声实现得到的转移函数均值和方差；$R_b$ 是其无量纲相对方差。
+- $N_{{\rm cal},b}$ 是标定模拟在该分箱内的 Fourier 模式数；$200\times200$ 指波数分箱网格，不是这里的模式数。
+  $N_{\rm cal}/2$ 沿用 Gaussian 功率谱方差 $\mathrm{Var}(\widehat P_b)\simeq2D_b/N_{{\rm cal},b}$ 的模式计数约定，
+  在对角协方差及 $1/N$ 缩放近似下，把箱平均相对方差转换为 Fisher 分母使用的系数。
+- $\sigma_a(z)$ 为望远镜 $a$ 已有体素热噪声方差沿红移插值后开平方得到的温度 RMS。
+  $\mathcal I_m$ 在 $(z,\log\sigma)$ 上共用线性插值，在二维波数上分别采用双线性或三次样条。
+  波数除以 $h_{\rm mock}=0.6766$，将 Fisher 的 $\mathrm{Mpc}^{-1}$ 转为 Noise 表的 $h/\mathrm{Mpc}$。
+
+对应代码为 `NoiseHKLTable._plane` → `NoiseCalibration.evaluate_amplitude`。
+Fisher 直接使用 $P_{\rm HI}^2\widetilde A_m$；不再重复乘标定模式数，也不额外除以观测模式数。
+
 “解析不含热噪声”仅说明解析分母没有 $P_N$，该模型的额外 Noise 项仍保留模拟中的热噪声恢复散布。
 
 代码在正 $k_\parallel$ 半轴积分：

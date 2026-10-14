@@ -5,14 +5,21 @@ Notebook 调用 `run_fisher_only(cfg, SURVEYS)`，复用现有体素方差和 No
 它按当前分母更新 Fisher 基准，并同时计算线性与 spline；匹配结果存在时直接读取。
 随后调用 `compare_fisher_denominators(cfg, SURVEYS)`，并列展示解析项含/不含 P_N 的两种模型。
 该入口复用已有不含 P_N 的结果，只补齐缺失的含 P_N 模型，之后读取同一比较缓存。
-当前配置为 `delta_z=0.01`、`kmax=voxel_kmax=0.363 Mpc^-1`。
+当前配置为 `delta_z=0.01`、Fisher 的 `kmax=0.2 Mpc^-1`。
+另设 `kpar_max=0.01 Mpc^-1`，解析与解析＋Noise共用这一独立径向上限。
+设为 `None` 可取消独立径向上限，仍保留总k球面边界与仪器原有下限。
+`voxel_kmax=0.363 Mpc^-1` 记录已有体素标定的上限，独立于 Fisher 分析范围。
+修改 notebook 的 `KMAX` 会更新 Fisher；已有体素方差继续作为固定的 Noise RMS 输入。
+修改 `KPAR_MAX` 只更新 Fisher；日常运行不重新计算体素方差。
+配置与计算单元都会重新加载磁盘上的 `forecast_916.py`，计算单元直接通过模块调用函数，
+避免继续使用旧内核中导入的函数；运行时显示 Fisher 与体素标定的两个上限。
 
 ## 文件作用
 
 | 位置 | 用途 |
 | --- | --- |
 | `forecast_916.py` | 组织信号、仪器噪声、新 Noise 接入、Fisher 和结果保存 |
-| `voxel_modes_916.py` | 有限盒子模式求和与三维 sinc 体素窗口 |
+| `voxel_modes_916.py` | 有限盒子模式求和与三维 sinc 体素窗口；仅显式重建标定时加载 |
 | `diagnose_noise_916.py` | 红移平滑性和 k 下限增量诊断 |
 | `tests/verify_916.py` | 模式求和、坐标测度和预测流程的数值验证 |
 | `tests/check_common_kmax.py` | 核对保存结果、共同域、分母模型和体素方差一致性 |
@@ -48,7 +55,7 @@ denom_total = denom_ana + denom_noise
 两种对照使用同一有效域；`sigma_ana_full` 单独保留完整仪器域解析约束。
 
 默认 `noise_fisher_only=False`，使用完整200×200 Noise表的数值有效部分。
-实际积分域仍与仪器覆盖及 `k<=0.363 Mpc^-1` 取交集，不作表外外推。
+实际 Fisher 积分域仍与仪器覆盖及 `k<=cfg.kmax` 取交集，不作表外外推。
 原39个低k箱来自 `k_eff=0.025 h/Mpc` 的筛选，不是完整表的有效性边界。
 本次 spline 对比需要完整表。完整箱间协方差目前仅覆盖原39箱；
 当前两种设置均只使用逐箱方差，因此完整表预测仍采用对角协方差近似。

@@ -259,13 +259,48 @@ def run():
     print(json.dumps(report,indent=2))
 
 
-def verify_fisher_only():
+def check_fisher_cache_inputs(cfg):
+    """A new analysis cut must bypass stale Fisher data and reuse voxel inputs."""
+    class CalculationReached(RuntimeError):
+        pass
+
+    changes = [replace(cfg, kmax=0.9*cfg.kmax)]
+    if cfg.kpar_max is not None:
+        changes.append(replace(cfg, kpar_max=0.9*cfg.kpar_max))
+    # Stop before CLASS: reaching it proves that the old voxel table was
+    # accepted and that a Fisher cache for a different kmax was not returned.
+    with contextlib.redirect_stdout(io.StringIO()), \
+         patch.object(f, "SignalModels", side_effect=CalculationReached), \
+         patch.object(f, "voxel_variance", side_effect=AssertionError("Unexpected voxel calculation")), \
+         patch("voxel_modes_916.FiniteBoxVoxelIntegrator", side_effect=AssertionError("Unexpected voxel integration")):
+        for changed in changes:
+            try:
+                f.run_fisher_only(changed)
+            except CalculationReached:
+                pass
+            else:
+                raise AssertionError("A different Fisher cutoff must invalidate the saved cache.")
+        for invalid in [replace(cfg, voxel_kmax=0.9*cfg.voxel_kmax),
+                        replace(cfg, t_obs_hours=2*cfg.t_obs_hours)]:
+            try:
+                f.run_fisher_only(invalid, reuse_saved=False)
+            except ValueError as exc:
+                assert "saved voxel calibration differs" in str(exc)
+            else:
+                raise AssertionError("Physical changes must not reuse incompatible voxel noise.")
+    return dict(changed_fisher_cut_reuses_voxel_inputs=True,
+                changed_fisher_cut_invalidates_fisher_cache=True,
+                changed_voxel_cut_or_time_rejected=True)
+
+
+def verify_fisher_only(cfg=None):
     """Verify the new covariance without recalculating any voxel variance."""
     out = ROOT/"outputs_916"
-    cfg = f.Config(**json.loads((out/"run_config.json").read_text()))
+    cfg = cfg or f.Config(**json.loads((out/"run_config.json").read_text()))
     previous = json.loads((out/"validation.json").read_text())
     report = {key: value for key, value in previous.items()
               if key not in {"surveys", "noise_nonempty_information_check", "fisher_only"}}
+    cache_checks = check_fisher_cache_inputs(cfg)
     models, noise = f.SignalModels(cfg), f.NoiseCalibration(cfg)
     try:
         report.update(check_noise_spline(noise, cfg))
@@ -278,12 +313,17 @@ def verify_fisher_only():
         forbidden = AssertionError("Fisher-only validation must not calculate thermal or voxel power.")
         with patch.object(f, "noise_power", side_effect=forbidden), \
              patch.object(f, "voxel_variance", side_effect=forbidden), \
-             patch.object(f, "FiniteBoxVoxelIntegrator", side_effect=forbidden):
+             patch("voxel_modes_916.FiniteBoxVoxelIntegrator", side_effect=forbidden):
             matrices, coverage = f._fisher_at_z(
                 models, e, z, cfg, noise, sigma, compare_spline=True)
             p, ell, weight, valid = f.cylindrical_grid(e, models.fid.geometry(z), cfg, noise)
             query = noise.evaluate_amplitude(p, ell, z, sigma, method="both")
             valid &= (weight > 0) & query["valid"]
+            largest_k = float(np.hypot(p[valid], ell[valid]).max())
+            assert largest_k <= cfg.kmax*(1+1e-12)
+            largest_kpar = float(ell[valid].max())
+            if cfg.kpar_max is not None:
+                assert largest_kpar <= cfg.kpar_max*(1+1e-12)
             power, derivatives = models.power_and_derivatives(p[valid], ell[valid], z)
             logarithmic = derivatives/power
             w = weight[valid]/(4*np.pi**2)
@@ -325,6 +365,9 @@ def verify_fisher_only():
         assert thermal_error < 1e-11
         assert thermal_coverage["supported_nodes"] == coverage["supported_nodes"]
         report["fisher_only"] = dict(
+            **cache_checks,
+            fisher_kmax_Mpc_inv=cfg.kmax, max_sampled_k_Mpc_inv=largest_k,
+            fisher_kpar_max_Mpc_inv=cfg.kpar_max, max_sampled_kpar_Mpc_inv=largest_kpar,
             denominator=f.TOTAL_DENOMINATOR, telescope=name, z=z,
             covariance_verified_independently=True,
             analytic_max_scaled_difference=analytic_error,

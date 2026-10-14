@@ -13,20 +13,27 @@
   "noise_optimized_reader_queries_checked": 3042,
   "noise_optimized_reader_max_relative_difference": 4.440892098500626e-16,
   "fisher_only": {
+    "changed_fisher_cut_reuses_voxel_inputs": true,
+    "changed_fisher_cut_invalidates_fisher_cache": true,
+    "changed_voxel_cut_or_time_rejected": true,
+    "fisher_kmax_Mpc_inv": 0.2,
+    "max_sampled_k_Mpc_inv": 0.19999978386542186,
+    "fisher_kpar_max_Mpc_inv": 0.01,
+    "max_sampled_kpar_Mpc_inv": 0.00999642136714347,
     "denominator": "P_HI**2 + P_HI**2 * A_noise_conditional",
     "telescope": "hirax_interferom",
     "z": 2.501,
     "covariance_verified_independently": true,
-    "analytic_max_scaled_difference": 2.34494515657423e-16,
+    "analytic_max_scaled_difference": 3.6694203048932025e-16,
     "voxel_variances_not_calculated": true,
     "thermal_power_not_used_in_signal_only_fisher": true,
     "thermal_model_verified_independently": true,
-    "thermal_max_scaled_difference": 4.8342578385187094e-17,
+    "thermal_max_scaled_difference": 7.223171481902753e-17,
     "noise_does_not_increase_information": true,
     "refinement_max_relative_sigma_change": {
-      "analytic_common": 1.2371030436719721e-05,
-      "analytic_noise": 1.2006607063463903e-05,
-      "analytic_noise_spline": 1.1844977646502386e-05
+      "analytic_common": 3.946295364820607e-05,
+      "analytic_noise": 4.2556714895392034e-05,
+      "analytic_noise_spline": 4.313140039746699e-05
     },
     "voxel_validation_reused": true
   }

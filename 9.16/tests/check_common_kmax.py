@@ -73,8 +73,9 @@ def check_denominator_comparison(cfg, names, notebook):
 
 def run():
     cfg = json.loads((OUT / "run_config.json").read_text())
-    assert cfg["kmax"] == cfg["voxel_kmax"] == .363
-    assert cfg["delta_z"] == .01
+    assert cfg["kmax"] > 0 and cfg["voxel_kmax"] > 0
+    assert cfg.get("kpar_max") is None or cfg["kpar_max"] > 0
+    assert cfg["delta_z"] > 0
     assert cfg["noise_fisher_only"] is False
     assert not {"mock_file", "mock_k_unit", "mock_redshifts"}.intersection(cfg)
 
@@ -128,7 +129,9 @@ def run():
 
         voxel = joblib.load(OUT / f"voxel_noise_{name}.joblib")
         # Voxel metadata retains its original provenance; Fisher metadata is new.
-        assert voxel["metadata"]["config"] == metadata["config"]
+        forecast._check_voxel_config(voxel["metadata"]["config"], namespace["cfg"], name)
+        if "voxel_source_config" in metadata:
+            assert metadata["voxel_source_config"] == voxel["metadata"]["config"]
         individual = pd.read_csv(OUT / f"voxel_noise_{name}.csv")
         pd.testing.assert_frame_equal(individual, voxel["variance_table"],
                                       check_dtype=False, rtol=1e-12, atol=1e-14)
@@ -195,6 +198,9 @@ def run():
         total_rows=len(table), valid_rows=int(good.sum()),
         denominator_model=forecast.TOTAL_DENOMINATOR,
         current_result_consistency_passed=True,
+        fisher_kmax_Mpc_inv=cfg["kmax"],
+        fisher_kpar_max_Mpc_inv=cfg.get("kpar_max"),
+        voxel_calibration_kmax_Mpc_inv=cfg["voxel_kmax"],
         voxel_variances_reused=True, fisher_only_update=True,
         spline_comparison_passed=True,
         both_analytic_denominators_checked=True,

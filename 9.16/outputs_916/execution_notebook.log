@@ -1,6 +1,6 @@
 cell 1 finished; elapsed 1.7s
-cell 2 finished; elapsed 2.0s
-cell 4 finished; elapsed 2.1s
-cell 6 finished; elapsed 2.2s
-cell 7 finished; elapsed 3.8s
-Notebook execution complete: 6.5s
+cell 2 finished; elapsed 778.8s
+cell 4 finished; elapsed 778.8s
+cell 6 finished; elapsed 778.9s
+cell 7 finished; elapsed 780.3s
+Notebook execution complete: 783.0s

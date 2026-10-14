@@ -31,7 +31,6 @@ NOISE_ROOT = Path("/mnt/xiaodong/luantch/LSS21cm_freeloadXD/PosiRestore/FisherMe
 if str(BAO_ROOT) not in sys.path:
     sys.path.insert(0, str(BAO_ROOT))
 from radiofisher import baofisher_k as bf, experiments as ex
-from voxel_modes_916 import FiniteBoxVoxelIntegrator
 
 SURVEYS = ["ska_mid1_interferom", "chime_icyl", "hirax_interferom",
            "tianlai_icyl", "meerkat_b1_interferom"]
@@ -46,6 +45,7 @@ TOTAL_DENOMINATOR = "P_HI**2 + P_HI**2 * A_noise_conditional"
 class Config:
     delta_z: float = .01
     kmax: float = .363                 # Fisher total-k cutoff; matches voxel default.
+    kpar_max: float | None = None      # Optional independent Fisher radial cutoff.
     voxel_kmax: float = .363           # Independent total-k cutoff for voxel noise.
     t_obs_hours: float = 100000.
     boxsize_mpc_h: float = 3000.
@@ -66,6 +66,8 @@ class Config:
             raise ValueError("Bin width, kmax, time and h_mock must be positive.")
         if min(self.n_perp, self.n_parallel, self.n_z, self.pk_nodes) < 1:
             raise ValueError("Quadrature sizes must be positive.")
+        if self.kpar_max is not None and (not np.isfinite(self.kpar_max) or self.kpar_max <= 0):
+            raise ValueError("kpar_max must be finite and positive, or None.")
 
 
 def experiment(name, cfg):
@@ -365,7 +367,7 @@ def cylindrical_grid(e, geom, cfg, noise=None):
     """Gauss quadrature in p and positive ell, with exact spherical upper edge."""
     ellmin, cap = bf.noise_k_limits(geom, e)
     pmin, pmax = transverse_bounds(e, geom)
-    ellcap = cap
+    ellcap = cap if cfg.kpar_max is None else min(cap, cfg.kpar_max)
     if noise is not None:
         pmin, pmax = max(pmin, noise.p[0]), min(pmax, noise.p[-1])
         ellmin, ellcap = max(ellmin, noise.ell[0]), min(ellcap, noise.ell[-1])
@@ -757,6 +759,9 @@ def run_survey(name, cfg, models, integrator, noise):
 
 
 def run_all(cfg=None, surveys=None):
+    """Explicitly rebuild voxel calibration; the daily notebook does not call this."""
+    from voxel_modes_916 import FiniteBoxVoxelIntegrator
+
     cfg = cfg or Config()
     surveys = SURVEYS if surveys is None else surveys
     integrator = FiniteBoxVoxelIntegrator(cfg.boxsize_mpc_h,cfg.grid_size,cfg.h_mock,cfg.voxel_kmax)
@@ -782,6 +787,17 @@ def run_all(cfg=None, surveys=None):
     return results
 
 
+def _check_voxel_config(saved, cfg, name):
+    """Validate the fixed temperature-noise input, independently of Fisher cuts."""
+    fields = ("delta_z", "voxel_kmax", "t_obs_hours", "boxsize_mpc_h", "grid_size", "h_mock")
+    changed = [f"{key}: saved={saved.get(key)!r}, requested={getattr(cfg, key)!r}"
+               for key in fields if saved.get(key) != getattr(cfg, key)]
+    if changed:
+        raise ValueError(
+            f"{name}: saved voxel calibration differs ({'; '.join(changed)}). "
+            "Keep its input settings when changing only the Fisher kmax.")
+
+
 def load_results(cfg, surveys=None):
     """Read matching saved forecasts without recalculating voxel noise or CLASS."""
     surveys = SURVEYS if surveys is None else surveys
@@ -794,8 +810,9 @@ def load_results(cfg, surveys=None):
         voxel = joblib.load(voxel_path)
         saved = joblib.load(fisher_path) if cfg.run_fisher else {}
         metadata = saved.get("metadata", voxel["metadata"])
-        if metadata["config"] != asdict(cfg) or voxel["metadata"]["config"] != asdict(cfg):
-            raise ValueError("Saved configuration differs from cfg; update the matching inputs first.")
+        _check_voxel_config(voxel["metadata"]["config"], cfg, name)
+        if cfg.run_fisher and metadata["config"] != asdict(cfg):
+            raise ValueError("Saved Fisher configuration differs; call run_fisher_only(cfg, surveys).")
         if cfg.run_fisher and (metadata.get("fisher_analytic_denominator") != ANALYTIC_DENOMINATOR
                                or metadata.get("noise_total_denominator") != TOTAL_DENOMINATOR):
             raise ValueError("Saved Fisher denominator changed; call run_fisher_only(cfg, surveys).")
@@ -890,8 +907,7 @@ def run_fisher_only(cfg=None, surveys=None, *, reuse_saved=True):
     for name in surveys:
         path = out/f"voxel_noise_{name}.joblib"
         voxel = joblib.load(path)
-        if voxel["metadata"]["config"] != asdict(cfg):
-            raise ValueError(f"{name}: saved voxel inputs do not match cfg.")
+        _check_voxel_config(voxel["metadata"]["config"], cfg, name)
         voxels[name] = voxel
     print("Updating Fisher only: using saved voxel variances and the existing Noise table.", flush=True)
     noise, models = NoiseCalibration(cfg), None
@@ -924,6 +940,8 @@ def run_fisher_only(cfg=None, surveys=None, *, reuse_saved=True):
                     else np.full(len(PARAMETERS), np.nan))
             constraints.index.name = "param"
             metadata.update(
+                config=asdict(cfg),
+                voxel_source_config=copy.deepcopy(voxel["metadata"]["config"]),
                 fisher_analytic_denominator=ANALYTIC_DENOMINATOR,
                 noise_total_denominator=TOTAL_DENOMINATOR, noise_coverage=summary,
                 voxel_variance_reused=True,
@@ -956,6 +974,7 @@ def run_fisher_only(cfg=None, surveys=None, *, reuse_saved=True):
         out/"noise_coverage_all_surveys.csv", index=False)
     (out/"noise_calibration_summary.json").write_text(json.dumps(
         {r["telescope"]: r["metadata"]["noise_coverage"] for r in results}, indent=2))
+    (out/"run_config.json").write_text(json.dumps(asdict(cfg), indent=2)+"\n")
     _save_interpolation_comparison(cfg, surveys, records, saved_surveys)
     return results
 
@@ -966,7 +985,7 @@ def _comparison_fingerprint(cfg, surveys):
     paths = [out/f"{kind}_{name}.joblib" for name in surveys
              for kind in ["fisher", "voxel_noise"]]
     paths += [NOISE_ROOT/"noise_hkl.py", Path(bf.__file__), Path(ex.__file__)]
-    functions = [Cosmology, SignalModels, NoiseCalibration, experiment,
+    functions = [Cosmology, SignalModels, NoiseCalibration, experiment, _check_voxel_config, load_results,
                  cylindrical_grid, noise_power, _fisher_at_z, _noise_fisher,
                  sigma_from_fisher, planck_fisher, _analytic_fisher,
                  _interpolation_result, _save_interpolation_comparison,

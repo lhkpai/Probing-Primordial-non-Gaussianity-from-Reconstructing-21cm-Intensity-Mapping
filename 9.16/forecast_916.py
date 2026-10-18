@@ -15,6 +15,7 @@ import inspect
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import warnings
 
 import joblib
@@ -44,9 +45,7 @@ TOTAL_DENOMINATOR = "P_HI**2 + P_HI**2 * A_noise_conditional"
 @dataclass(frozen=True)
 class Config:
     delta_z: float = .01
-    kmax: float = .363                 # Fisher total-k cutoff; matches voxel default.
-    kpar_max: float | None = None      # Optional independent Fisher radial cutoff.
-    voxel_kmax: float = .363           # Independent total-k cutoff for voxel noise.
+    kmax: float = .363                 # Total-k cutoff; no separate radial cutoff.
     t_obs_hours: float = 100000.
     boxsize_mpc_h: float = 3000.
     grid_size: int = 512               # Defines voxel averaging width, not a k cutoff.
@@ -62,12 +61,10 @@ class Config:
     output_dir: str = str(ROOT / "outputs_916")
 
     def __post_init__(self):
-        if min(self.delta_z, self.kmax, self.voxel_kmax, self.t_obs_hours, self.h_mock) <= 0:
+        if min(self.delta_z, self.kmax, self.t_obs_hours, self.h_mock) <= 0:
             raise ValueError("Bin width, kmax, time and h_mock must be positive.")
         if min(self.n_perp, self.n_parallel, self.n_z, self.pk_nodes) < 1:
             raise ValueError("Quadrature sizes must be positive.")
-        if self.kpar_max is not None and (not np.isfinite(self.kpar_max) or self.kpar_max <= 0):
-            raise ValueError("kpar_max must be finite and positive, or None.")
 
 
 def experiment(name, cfg):
@@ -367,7 +364,7 @@ def cylindrical_grid(e, geom, cfg, noise=None):
     """Gauss quadrature in p and positive ell, with exact spherical upper edge."""
     ellmin, cap = bf.noise_k_limits(geom, e)
     pmin, pmax = transverse_bounds(e, geom)
-    ellcap = cap if cfg.kpar_max is None else min(cap, cfg.kpar_max)
+    ellcap = cap
     if noise is not None:
         pmin, pmax = max(pmin, noise.p[0]), min(pmax, noise.p[-1])
         ellmin, ellcap = max(ellmin, noise.ell[0]), min(ellcap, noise.ell[-1])
@@ -646,7 +643,7 @@ def run_survey(name, cfg, models, integrator, noise):
     e = experiment(name, cfg)
     requested, band = redshift_bounds(e)
     edges = bin_edges(*requested, cfg.delta_z)
-    matrices = {key: np.zeros((7,7)) for key in ("analytic_full", "analytic_common", "analytic_noise")}
+    matrices = {key: np.zeros((7,7)) for key in ("analytic_common", "analytic_noise")}
     rows = []
     for index, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
         obslo, obshi = max(lo, band[0]), min(hi, band[1])
@@ -671,9 +668,6 @@ def run_survey(name, cfg, models, integrator, noise):
                 fraction += dv*result["supported_mode_fraction"]
                 volume += dv
                 zeff += dv*z
-                if cfg.run_fisher:
-                    fa, _, _ = fisher_at_z(models, local, z, cfg)
-                    matrices["analytic_full"] += dv*fa
             row.update(z_effective=zeff/volume, var_noise_mK2=numerator/volume,
                        rms_noise_mK=np.sqrt(numerator/volume),
                        effective_mode_count=modes/volume,
@@ -682,14 +676,14 @@ def run_survey(name, cfg, models, integrator, noise):
             lower, upper = transverse_bounds(e, representative)
             kfg, _ = bf.noise_k_limits(representative, e)
             row.update(kperp_min_envelope_Mpc_inv=lower,
-                       kperp_max_envelope_Mpc_inv=min(upper,np.sqrt(max(0.,cfg.voxel_kmax**2-kfg**2))),
+                       kperp_max_envelope_Mpc_inv=min(upper,np.sqrt(max(0.,integrator.kmax**2-kfg**2))),
                        kpar_min_Mpc_inv=kfg,
                        kpar_min_lattice_Mpc_inv=np.ceil(kfg/integrator.fundamental_k)*integrator.fundamental_k)
         rows.append(row)
         if index % 10 == 0 or index == len(edges)-2:
             print(f"[{name}] bin {index+1}/{len(edges)-1}: {row['status']}", flush=True)
     frame = pd.DataFrame(rows)
-    frame["k_max_Mpc_inv"] = cfg.voxel_kmax
+    frame["k_max_Mpc_inv"] = integrator.kmax
     frame["voxel_side_Mpc"] = cfg.boxsize_mpc_h/cfg.grid_size/cfg.h_mock
     frame["t_obs_hours"] = cfg.t_obs_hours
     frame["baseline_source"] = e["baseline_source"]
@@ -703,8 +697,7 @@ def run_survey(name, cfg, models, integrator, noise):
     prior = planck_fisher()
     constraints = pd.DataFrame(index=PARAMETERS)
     if cfg.run_fisher:
-        for label, key in [("sigma_ana_full","analytic_full"),
-                           ("sigma_ana_common","analytic_common"),
+        for label, key in [("sigma_ana_common","analytic_common"),
                            ("sigma_ana_noise","analytic_noise")]:
             constraints[label] = sigma_from_fisher(matrices[key])
             # Empty HI support must not masquerade as a successful CMB-only forecast.
@@ -734,7 +727,7 @@ def run_survey(name, cfg, models, integrator, noise):
             noise_interpolation="Delaunay linear in (z, log sigma); bilinear in (k_perp, k_parallel)",
             fisher_analytic_denominator=ANALYTIC_DENOMINATOR,
             noise_total_denominator=TOTAL_DENOMINATOR,
-            noise_outside_support="Excluded from both common-domain Fishers; full analytic saved separately",
+            noise_outside_support="Excluded from all common-domain Fisher forecasts",
             noise_model_limitations=[
                 "Analytic covariance is cosmic variance only; calibrated conditional Noise represents the added scatter",
                 "Matching voxel RMS does not reproduce anisotropic instrumental noise power",
@@ -764,7 +757,7 @@ def run_all(cfg=None, surveys=None):
 
     cfg = cfg or Config()
     surveys = SURVEYS if surveys is None else surveys
-    integrator = FiniteBoxVoxelIntegrator(cfg.boxsize_mpc_h,cfg.grid_size,cfg.h_mock,cfg.voxel_kmax)
+    integrator = FiniteBoxVoxelIntegrator(cfg.boxsize_mpc_h,cfg.grid_size,cfg.h_mock,cfg.kmax)
     noise = NoiseCalibration(cfg) if cfg.run_fisher else None
     models = None
     try:
@@ -789,7 +782,9 @@ def run_all(cfg=None, surveys=None):
 
 def _check_voxel_config(saved, cfg, name):
     """Validate the fixed temperature-noise input, independently of Fisher cuts."""
-    fields = ("delta_z", "voxel_kmax", "t_obs_hours", "boxsize_mpc_h", "grid_size", "h_mock")
+    # The saved table defines its own calibration range. Changing the Fisher
+    # cutoff does not change the map RMS used to query the Noise calibration.
+    fields = ("delta_z", "t_obs_hours", "boxsize_mpc_h", "grid_size", "h_mock")
     changed = [f"{key}: saved={saved.get(key)!r}, requested={getattr(cfg, key)!r}"
                for key in fields if saved.get(key) != getattr(cfg, key)]
     if changed:
@@ -824,24 +819,6 @@ def load_results(cfg, surveys=None):
             noise_coverage=(pd.read_csv(out/f"noise_coverage_{name}.csv")
                             if cfg.run_fisher else pd.DataFrame())))
     return results
-
-
-def _analytic_fisher(models, e, frame, cfg, *, include_thermal_noise=False):
-    """Integrate the full instrument domain using saved observed z boundaries."""
-    matrix = np.zeros((len(PARAMETERS), len(PARAMETERS)))
-    for index, row in enumerate(frame.itertuples(index=False)):
-        if row.status == "out_of_band":
-            continue
-        zs, wz = gauss_interval(row.z_obs_low, row.z_obs_high, cfg.n_z)
-        local = dict(e, dnutot=e["nu_line"]/(1+row.z_obs_low)
-                     - e["nu_line"]/(1+row.z_obs_high))
-        for z, weight in zip(zs, wz):
-            analytic, _, _ = fisher_at_z(models, local, z, cfg,
-                                        include_thermal_noise=include_thermal_noise)
-            matrix += weight*models.fid.volume_element(z, e)*analytic
-        if (index+1) % 20 == 0 or index == len(frame)-1:
-            print(f"[{row.telescope}] Analytic Fisher bin {index+1}/{len(frame)}", flush=True)
-    return matrix
 
 
 def _interpolation_result(name, matrices, summary, prior):
@@ -920,7 +897,6 @@ def run_fisher_only(cfg=None, surveys=None, *, reuse_saved=True):
             if metadata["noise_fingerprint"] != noise.table.metadata["scientific_fingerprint"]:
                 raise ValueError("Noise calibration changed; verify the saved voxel-to-Noise matching first.")
             frame, e = voxel["variance_table"], experiment(name, cfg)
-            full = _analytic_fisher(models, e, frame, cfg)
             matrices, coverage, summary = _noise_fisher(
                 models, e, frame, cfg, noise, compare_spline=True)
             compared, fnl = _interpolation_result(name, matrices, summary, prior)
@@ -928,10 +904,8 @@ def run_fisher_only(cfg=None, surveys=None, *, reuse_saved=True):
                 matrices={key: value for key, value in matrices.items()},
                 constraints=compared, coverage_summary=summary,
                 baseline_max_scaled_difference=0.)
-            matrices["analytic_full"] = full
             constraints = pd.DataFrame(index=PARAMETERS)
-            for label, key in [("sigma_ana_full", "analytic_full"),
-                               ("sigma_ana_common", "analytic_common"),
+            for label, key in [("sigma_ana_common", "analytic_common"),
                                ("sigma_ana_noise", "analytic_noise"),
                                ("sigma_ana_noise_spline", "analytic_noise_spline")]:
                 constraints[label] = sigma_from_fisher(matrices[key])
@@ -944,6 +918,7 @@ def run_fisher_only(cfg=None, surveys=None, *, reuse_saved=True):
                 voxel_source_config=copy.deepcopy(voxel["metadata"]["config"]),
                 fisher_analytic_denominator=ANALYTIC_DENOMINATOR,
                 noise_total_denominator=TOTAL_DENOMINATOR, noise_coverage=summary,
+                noise_outside_support="Excluded from all common-domain Fisher forecasts",
                 voxel_variance_reused=True,
                 voxel_source_sha256={str(out/f"voxel_noise_{name}.{suffix}"):
                     hashlib.sha256((out/f"voxel_noise_{name}.{suffix}").read_bytes()).hexdigest()
@@ -987,13 +962,13 @@ def _comparison_fingerprint(cfg, surveys):
     paths += [NOISE_ROOT/"noise_hkl.py", Path(bf.__file__), Path(ex.__file__)]
     functions = [Cosmology, SignalModels, NoiseCalibration, experiment, _check_voxel_config, load_results,
                  cylindrical_grid, noise_power, _fisher_at_z, _noise_fisher,
-                 sigma_from_fisher, planck_fisher, _analytic_fisher,
+                 sigma_from_fisher, planck_fisher,
                  _interpolation_result, _save_interpolation_comparison,
                  run_fisher_only, compare_noise_interpolations]
     source = "\n".join(inspect.getsource(function) for function in functions)
     stat = Path(cfg.noise_file).stat()
     return dict(
-        schema=2, config=asdict(cfg), surveys=list(surveys),
+        schema=3, config=asdict(cfg), surveys=list(surveys),
         analytic_denominator=ANALYTIC_DENOMINATOR, total_denominator=TOTAL_DENOMINATOR,
         code_sha256=hashlib.sha256(source.encode()).hexdigest(),
         inputs_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths},
@@ -1003,7 +978,7 @@ def _comparison_fingerprint(cfg, surveys):
 def compare_noise_interpolations(cfg, surveys=None, *, reuse_saved=True):
     """Compare linear and cubic A interpolation with shared modes and derivatives.
 
-    Reuse saved voxel variances and the full analytic forecast. Only the
+    Reuse saved voxel variances and the common-domain analytic forecast. Only the
     common-domain Fisher integration is evaluated, once for both methods.
     Cache results in two fixed files in the existing output directory.
     """
@@ -1094,13 +1069,10 @@ def compare_fisher_denominators(cfg, surveys=None, *, reuse_saved=True):
                 coverage_summary=previous["metadata"]["noise_coverage"])
             e, frame = experiment(name, cfg), previous["variance_table"]
             print(f"[{name}] Updating covariance with P_N; reusing voxel variance.", flush=True)
-            full = _analytic_fisher(models, e, frame, cfg, include_thermal_noise=True)
             matrices, coverage, summary = _noise_fisher(
                 models, e, frame, cfg, noise, compare_spline=True, include_thermal_noise=True)
-            matrices["analytic_full"] = full
             constraints = pd.DataFrame(index=PARAMETERS)
-            for label, key in [("sigma_ana_full", "analytic_full"),
-                               ("sigma_ana_common", "analytic_common"),
+            for label, key in [("sigma_ana_common", "analytic_common"),
                                ("sigma_ana_noise", "analytic_noise"),
                                ("sigma_ana_noise_spline", "analytic_noise_spline")]:
                 constraints[label] = sigma_from_fisher(matrices[key])
@@ -1135,6 +1107,202 @@ def compare_fisher_denominators(cfg, surveys=None, *, reuse_saved=True):
     joblib.dump(saved, cache_path)
     combined.to_csv(out/"fisher_denominator_comparison.csv", index=False)
     return saved
+
+
+def _foreground_strip_grid(e, geom, cfg, noise, kpar_min):
+    """Integrate the removed strip with an exact upper boundary, not a node mask."""
+    upper = min(kpar_min, noise.ell[-1])
+    if upper <= noise.ell[0]:
+        return None
+    parallel = np.r_[noise.ell[noise.ell < upper], upper]
+    transverse = noise.p
+    _, cap = bf.noise_k_limits(geom, e)
+    # Split where the spherical boundary crosses the strip boundary.
+    knee = np.sqrt(max(0., cap**2-upper**2))
+    if transverse[0] < knee < transverse[-1]:
+        transverse = np.unique(np.r_[transverse, knee])
+    domain = SimpleNamespace(p=transverse, ell=parallel)
+    return cylindrical_grid(e, geom, cfg, domain)
+
+
+def _foreground_strip_fisher(models, e, z, cfg, noise, sigma_mK, kpar_min):
+    """Analytic information lost below kpar_min, for both denominators at once."""
+    matrices = {key: np.zeros((len(PARAMETERS), len(PARAMETERS)))
+                for key in ("signal_only", "signal_plus_thermal")}
+    record = dict(removed_nodes=0, removed_mode_weight=0.,
+                  removed_kpar_min=np.nan, removed_kpar_max=np.nan)
+    geom = models.fid.geometry(z)
+    grid = _foreground_strip_grid(e, geom, cfg, noise, kpar_min)
+    if grid is None:
+        return matrices, record
+    p, ell, weights, valid = grid
+    # Noise supplies the existing common-domain mask only. Its variance never
+    # enters either denominator of this traditional-foreground comparison.
+    query = noise.evaluate_amplitude(p, ell, z, sigma_mK)
+    amplitude = query["A_noise_conditional"]
+    valid &= (weights > 0) & query["valid"] & np.isfinite(amplitude) & (amplitude >= 0)
+    if not valid.any():
+        return matrices, record
+    power, derivatives = models.power_and_derivatives(p[valid], ell[valid], z)
+    if not np.all(np.isfinite(power) & (power > 0)):
+        raise FloatingPointError("Traditional Fisher requires finite positive HI power.")
+    thermal, _ = noise_power(p[valid], ell[valid], geom, e)
+    logarithmic = derivatives/power
+    w = weights[valid]/(4*np.pi**2)
+    matrices["signal_only"] = (logarithmic*w) @ logarithmic.T
+    matrices["signal_plus_thermal"] = (
+        logarithmic*(w/(1+thermal/power)**2)) @ logarithmic.T
+    record.update(removed_nodes=int(valid.sum()),
+                  removed_mode_weight=float(weights[valid].sum()),
+                  removed_kpar_min=float(ell[valid].min()),
+                  removed_kpar_max=float(ell[valid].max()))
+    return matrices, record
+
+
+def _foreground_removed_fisher(models, e, frame, cfg, noise, coverage, kpar_min):
+    """Reuse the saved common-domain redshift nodes, RMS and volume weights."""
+    matrices = {key: np.zeros((len(PARAMETERS), len(PARAMETERS)))
+                for key in ("signal_only", "signal_plus_thermal")}
+    samples = frame.loc[np.isfinite(frame.var_noise_mK2) & (frame.var_noise_mK2 > 0),
+                        "z_mid"].sort_values().to_numpy()
+    if not len(samples):
+        raise ValueError("Traditional comparison requires the saved common-domain RMS samples.")
+    rows, records = list(frame.itertuples(index=False)), []
+    for index, node in enumerate(coverage.itertuples(index=False)):
+        if node.status != "ok":
+            continue
+        row = rows[int(np.searchsorted(frame.z_high.to_numpy(), node.z, side="right"))]
+        lo = max(row.z_obs_low, noise.z[0], samples[0])
+        hi = min(row.z_obs_high, noise.z[-1], samples[-1])
+        local = dict(e, dnutot=e["nu_line"]/(1+lo)-e["nu_line"]/(1+hi))
+        lost, record = _foreground_strip_fisher(
+            models, local, node.z, cfg, noise, node.sigma_mK, kpar_min)
+        for key in matrices:
+            matrices[key] += node.volume_weight_Mpc3*lost[key]
+        records.append(record | dict(z=node.z, sigma_mK=node.sigma_mK,
+                                     volume_weight_Mpc3=node.volume_weight_Mpc3))
+        if (index+1) % 100 == 0:
+            print(f"[{row.telescope}] Foreground strip node {index+1}/{len(coverage)}", flush=True)
+    return matrices, pd.DataFrame(records)
+
+
+def _traditional_fingerprint(comparison, cfg, surveys, kpar_min):
+    functions = [_foreground_strip_grid, _foreground_strip_fisher,
+                 _foreground_removed_fisher, _traditional_fingerprint,
+                 _write_traditional_outputs, add_traditional_forecast]
+    columns = [key for key in comparison["constraints"]
+               if key.startswith("sigma_") and not key.startswith("sigma_ana_trad")]
+    return dict(
+        schema=1, baseline=comparison["fingerprint"], kpar_min_Mpc_inv=kpar_min,
+        baseline_constraints_sha256=hashlib.sha256(np.ascontiguousarray(
+            comparison["constraints"][columns].to_numpy()).tobytes()).hexdigest(),
+        implementation_sha256=hashlib.sha256("\n".join(
+            inspect.getsource(function) for function in functions).encode()).hexdigest(),
+        common_matrices_sha256={f"{model}/{name}": hashlib.sha256(
+            np.ascontiguousarray(entries[name]["matrices"]["analytic_common"]).tobytes()).hexdigest()
+            for model, entries in comparison["models"].items() for name in surveys},
+        coverage_sha256={name: hashlib.sha256(
+            (Path(cfg.output_dir)/f"noise_coverage_{name}.csv").read_bytes()).hexdigest()
+            for name in surveys})
+
+
+def _write_traditional_outputs(comparison, out):
+    """Append two columns while preserving the original six CSV cell strings."""
+    columns = ["sigma_ana_trad", "sigma_ana_trad_cmb"]
+    tables = [(out/"fisher_denominator_comparison.csv", comparison["constraints"],
+               ["covariance_model", "telescope", "param"])]
+    tables += [(out/f"constraints_{name}.csv", item["constraints"].reset_index(), ["param"])
+               for name, item in comparison["models"]["signal_only"].items()]
+    for path, values, keys in tables:
+        original = pd.read_csv(path, dtype=str, keep_default_na=False).set_index(keys)
+        extra = values.set_index(keys)[columns]
+        if not original.index.equals(extra.index):
+            raise ValueError(f"{path.name}: parameter rows differ from the saved baseline.")
+        for column in columns:
+            original[column] = extra[column].map(lambda value: repr(float(value)))
+        content = original.to_csv()
+        if content != path.read_text():
+            path.write_text(content)
+    joblib.dump(comparison, out/"fisher_denominator_comparison.joblib")
+
+
+def add_traditional_forecast(comparison, cfg, surveys=None, *, kpar_min=.02, reuse_saved=True):
+    """Append a traditional foreground cut without changing the six baseline columns.
+
+    F_trad = F_common - F(k_parallel < kpar_min). Only the removed strip is
+    calculated; both analytic denominators share its nodes and derivatives.
+    The new cache lives inside the existing denominator-comparison joblib.
+    """
+    surveys = list(SURVEYS if surveys is None else surveys)
+    if not np.isfinite(kpar_min) or kpar_min < 0:
+        raise ValueError("Traditional k_parallel minimum must be finite and nonnegative.")
+    expected = dict(
+        baseline=_comparison_fingerprint(cfg, surveys),
+        comparison_code=hashlib.sha256(inspect.getsource(compare_fisher_denominators).encode()).hexdigest())
+    if comparison["fingerprint"] != expected:
+        raise ValueError("Traditional comparison requires a matching saved Fisher baseline.")
+    fingerprint = _traditional_fingerprint(comparison, cfg, surveys, kpar_min)
+    out = Path(cfg.output_dir)
+    cached = comparison.get("traditional_foreground", {})
+    if reuse_saved and cached.get("fingerprint") == fingerprint:
+        print("Using saved traditional foreground comparison; baseline columns are unchanged.", flush=True)
+        _write_traditional_outputs(comparison, out)
+        return comparison
+    result = copy.deepcopy(comparison)
+    removed, records = {}, {}
+    models, noise = None, None
+    try:
+        if 0 < kpar_min < cfg.kmax:
+            noise, models = NoiseCalibration(cfg), SignalModels(cfg)
+        for name in surveys:
+            common = {key: entries[name]["matrices"]["analytic_common"]
+                      for key, entries in comparison["models"].items()}
+            if kpar_min == 0:
+                lost = {key: np.zeros_like(value) for key, value in common.items()}
+                coverage = pd.DataFrame()
+            elif kpar_min >= cfg.kmax:
+                lost, coverage = common, pd.DataFrame()
+            else:
+                voxel = joblib.load(out/f"voxel_noise_{name}.joblib")
+                _check_voxel_config(voxel["metadata"]["config"], cfg, name)
+                reference = pd.read_csv(out/f"noise_coverage_{name}.csv", float_precision="round_trip")
+                lost, coverage = _foreground_removed_fisher(
+                    models, experiment(name, cfg), voxel["variance_table"], cfg,
+                    noise, reference, kpar_min)
+            removed[name], records[name] = lost, coverage
+            for model, base in common.items():
+                matrix = (base-lost[model])
+                matrix = (matrix+matrix.T)/2
+                scale = np.sqrt(np.maximum(np.diag(base), np.finfo(float).tiny))
+                if np.linalg.eigvalsh(matrix/scale[:, None]/scale[None, :]).min() < -1e-8:
+                    raise FloatingPointError(f"{name}: removed foreground information exceeds the baseline.")
+                item = result["models"][model][name]
+                item["matrices"]["analytic_trad"] = matrix
+                item["constraints"]["sigma_ana_trad"] = sigma_from_fisher(matrix)
+                item["constraints"]["sigma_ana_trad_cmb"] = (
+                    sigma_from_fisher(matrix+planck_fisher()) if np.any(np.diag(matrix) > 0)
+                    else np.full(len(PARAMETERS), np.nan))
+            print(f"[{name}] Traditional foreground cut: |k_parallel| >= {kpar_min:g} Mpc^-1", flush=True)
+    finally:
+        if models is not None:
+            models.close()
+        if noise is not None:
+            noise.close()
+    tables = []
+    for model, entries in result["models"].items():
+        for name, item in entries.items():
+            table = item["constraints"].reset_index()
+            table.insert(0, "telescope", name)
+            table.insert(0, "covariance_model", model)
+            tables.append(table)
+    result["constraints"] = pd.concat(tables, ignore_index=True)
+    result["traditional_foreground"] = dict(
+        fingerprint=fingerprint, kpar_min_Mpc_inv=kpar_min,
+        method="F_trad = F_common - F_removed; exact strip boundary",
+        added_noise_variance=False, removed_matrices=removed, coverage=records,
+        baseline_matrices_reused=True, voxel_variances_reused=True)
+    _write_traditional_outputs(result, out)
+    return result
 
 
 def plot_results(results, output_dir=None):

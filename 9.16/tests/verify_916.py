@@ -97,7 +97,7 @@ def run():
     models=f.SignalModels(cfg)
     geom=models.fid.geometry(1.)
     noise=f.NoiseCalibration(cfg)
-    integ=FiniteBoxVoxelIntegrator(cfg.boxsize_mpc_h,cfg.grid_size,cfg.h_mock,cfg.voxel_kmax)
+    integ=FiniteBoxVoxelIntegrator(cfg.boxsize_mpc_h,cfg.grid_size,cfg.h_mock,cfg.kmax)
     report['surveys']={}
     try:
         report.update(check_noise_spline(noise, cfg))
@@ -265,8 +265,6 @@ def check_fisher_cache_inputs(cfg):
         pass
 
     changes = [replace(cfg, kmax=0.9*cfg.kmax)]
-    if cfg.kpar_max is not None:
-        changes.append(replace(cfg, kpar_max=0.9*cfg.kpar_max))
     # Stop before CLASS: reaching it proves that the old voxel table was
     # accepted and that a Fisher cache for a different kmax was not returned.
     with contextlib.redirect_stdout(io.StringIO()), \
@@ -280,7 +278,7 @@ def check_fisher_cache_inputs(cfg):
                 pass
             else:
                 raise AssertionError("A different Fisher cutoff must invalidate the saved cache.")
-        for invalid in [replace(cfg, voxel_kmax=0.9*cfg.voxel_kmax),
+        for invalid in [replace(cfg, grid_size=2*cfg.grid_size),
                         replace(cfg, t_obs_hours=2*cfg.t_obs_hours)]:
             try:
                 f.run_fisher_only(invalid, reuse_saved=False)
@@ -290,7 +288,62 @@ def check_fisher_cache_inputs(cfg):
                 raise AssertionError("Physical changes must not reuse incompatible voxel noise.")
     return dict(changed_fisher_cut_reuses_voxel_inputs=True,
                 changed_fisher_cut_invalidates_fisher_cache=True,
-                changed_voxel_cut_or_time_rejected=True)
+                changed_voxel_geometry_or_time_rejected=True)
+
+
+def check_traditional_foreground(models, e, z, cfg, noise, sigma, common, thermal):
+    """Compare subtracting the lost strip with a direct integral above the cut."""
+    from types import SimpleNamespace
+
+    cut = .02
+    geom = models.fid.geometry(z)
+    lost, coverage = f._foreground_strip_fisher(models, e, z, cfg, noise, sigma, cut)
+    assert 0 < coverage["removed_kpar_min"] < coverage["removed_kpar_max"] < cut
+    assert f._foreground_strip_grid(e, geom, cfg, noise, 0.) is None
+    domain = SimpleNamespace(p=noise.p, ell=np.r_[cut, noise.ell[noise.ell > cut]])
+    p, ell, weights, valid = f.cylindrical_grid(e, geom, cfg, domain)
+    query = noise.evaluate_amplitude(p, ell, z, sigma)
+    valid &= (weights > 0) & query["valid"]
+    assert ell[valid].min() >= cut
+    assert np.hypot(p[valid], ell[valid]).max() <= cfg.kmax*(1+1e-12)
+    power, derivatives = models.power_and_derivatives(p[valid], ell[valid], z)
+    pn, _ = f.noise_power(p[valid], ell[valid], geom, e)
+    logarithmic = derivatives/power
+    w = weights[valid]/(4*np.pi**2)
+    errors = {}
+    for model, baseline, denominator in [
+            ("signal_only", common, 1.),
+            ("signal_plus_thermal", thermal, (1+pn/power)**2)]:
+        direct = (logarithmic*(w/denominator)) @ logarithmic.T
+        subtracted = baseline-lost[model]
+        scale = np.sqrt(np.diag(baseline))
+        errors[model] = float(np.max(np.abs(
+            (subtracted-direct)/scale[:, None]/scale[None, :])))
+        assert errors[model] < 1e-5
+        np.testing.assert_allclose(f.sigma_from_fisher(subtracted),
+                                   f.sigma_from_fisher(direct), rtol=1e-3)
+    reference = noise.evaluate_amplitude
+
+    def changed_amplitude(*args, **kwargs):
+        result = reference(*args, **kwargs)
+        result["A_noise_conditional"] *= 100
+        return result
+
+    with patch.object(noise, "evaluate_amplitude", side_effect=changed_amplitude):
+        changed, _ = f._foreground_strip_fisher(models, e, z, cfg, noise, sigma, cut)
+    for key in lost:
+        np.testing.assert_array_equal(changed[key], lost[key])
+    fine, _ = f._foreground_strip_fisher(models, e, z,
+        replace(cfg, n_perp=192, n_parallel=128), noise, sigma, cut)
+    refinement = {key: float(np.max(np.abs(
+        f.sigma_from_fisher(baseline-fine[key]) /
+        f.sigma_from_fisher(baseline-lost[key])-1)))
+        for key, baseline in [("signal_only", common), ("signal_plus_thermal", thermal)]}
+    assert max(refinement.values()) < 1e-3
+    return dict(kpar_min_Mpc_inv=cut, direct_integral_max_scaled_difference=errors,
+                refinement_max_relative_sigma_change=refinement,
+                no_reconstruction_variance_in_denominator=True,
+                exact_foreground_boundary_checked=True)
 
 
 def verify_fisher_only(cfg=None):
@@ -322,8 +375,8 @@ def verify_fisher_only(cfg=None):
             largest_k = float(np.hypot(p[valid], ell[valid]).max())
             assert largest_k <= cfg.kmax*(1+1e-12)
             largest_kpar = float(ell[valid].max())
-            if cfg.kpar_max is not None:
-                assert largest_kpar <= cfg.kpar_max*(1+1e-12)
+            assert largest_kpar <= cfg.kmax*(1+1e-12)
+            assert largest_kpar > 0.01  # The former radial cutoff is absent.
             power, derivatives = models.power_and_derivatives(p[valid], ell[valid], z)
             logarithmic = derivatives/power
             w = weight[valid]/(4*np.pi**2)
@@ -364,10 +417,13 @@ def verify_fisher_only(cfg=None):
             assert np.linalg.eigvalsh((difference+difference.T)/2).min() > -1e-10
         assert thermal_error < 1e-11
         assert thermal_coverage["supported_nodes"] == coverage["supported_nodes"]
+        report["traditional_foreground"] = check_traditional_foreground(
+            models, e, z, cfg, noise, sigma,
+            matrices["analytic_common"], thermal["analytic_common"])
         report["fisher_only"] = dict(
             **cache_checks,
             fisher_kmax_Mpc_inv=cfg.kmax, max_sampled_k_Mpc_inv=largest_k,
-            fisher_kpar_max_Mpc_inv=cfg.kpar_max, max_sampled_kpar_Mpc_inv=largest_kpar,
+            independent_radial_cutoff=False, max_sampled_kpar_Mpc_inv=largest_kpar,
             denominator=f.TOTAL_DENOMINATOR, telescope=name, z=z,
             covariance_verified_independently=True,
             analytic_max_scaled_difference=analytic_error,

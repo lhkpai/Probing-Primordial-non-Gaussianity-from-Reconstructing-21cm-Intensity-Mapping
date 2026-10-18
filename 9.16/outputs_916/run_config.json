@@ -1,8 +1,6 @@
 {
   "delta_z": 0.01,
-  "kmax": 0.2,
-  "kpar_max": 0.01,
-  "voxel_kmax": 0.363,
+  "kmax": 0.363,
   "t_obs_hours": 100000.0,
   "boxsize_mpc_h": 3000.0,
   "grid_size": 512,

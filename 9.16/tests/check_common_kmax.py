@@ -39,6 +39,11 @@ def check_denominator_comparison(cfg, names, notebook):
     pd.testing.assert_frame_equal(table, saved["constraints"], check_dtype=False, rtol=1e-12, atol=1e-14)
     assert len(table) == 2*len(names)*len(forecast.PARAMETERS)
     prior = forecast.planck_fisher()
+    traditional = saved["traditional_foreground"]
+    assert traditional["fingerprint"] == forecast._traditional_fingerprint(
+        saved, cfg, names, traditional["kpar_min_Mpc_inv"])
+    assert traditional["added_noise_variance"] is False
+    assert traditional["baseline_matrices_reused"] is True
     for model, entries in saved["models"].items():
         assert set(entries) == set(names)
         for name, item in entries.items():
@@ -47,16 +52,24 @@ def check_denominator_comparison(cfg, names, notebook):
             selected = table[(table.covariance_model == model) & (table.telescope == name)].set_index("param")
             pd.testing.assert_frame_equal(selected[constraints.columns], constraints,
                                           check_dtype=False, rtol=1e-12, atol=1e-14)
-            for label, key in [("sigma_ana_full", "analytic_full"),
-                               ("sigma_ana_common", "analytic_common"),
+            assert "analytic_full" not in matrices
+            assert not {"sigma_ana_full", "sigma_ana_full_cmb"}.intersection(constraints.columns)
+            for label, key in [("sigma_ana_common", "analytic_common"),
                                ("sigma_ana_noise", "analytic_noise"),
-                               ("sigma_ana_noise_spline", "analytic_noise_spline")]:
+                               ("sigma_ana_noise_spline", "analytic_noise_spline"),
+                               ("sigma_ana_trad", "analytic_trad")]:
                 for suffix, matrix in [("", matrices[key]), ("_cmb", matrices[key]+prior)]:
                     np.testing.assert_allclose(constraints[label+suffix],
                                                forecast.sigma_from_fisher(matrix), rtol=3e-10)
-            information_difference(matrices["analytic_full"], matrices["analytic_common"])
             for key in ["analytic_noise", "analytic_noise_spline"]:
                 information_difference(matrices["analytic_common"], matrices[key])
+            information_difference(matrices["analytic_common"], matrices["analytic_trad"])
+            removed = traditional["removed_matrices"][name][model]
+            np.testing.assert_allclose(matrices["analytic_trad"]+removed,
+                                       matrices["analytic_common"], rtol=1e-13, atol=1e-10)
+            for suffix in ["", "_cmb"]:
+                assert (constraints["sigma_ana_trad"+suffix] >=
+                        constraints["sigma_ana_common"+suffix]*(1-1e-8)).all()
     for name in names:
         cv = saved["models"]["signal_only"][name]["matrices"]
         thermal = saved["models"]["signal_plus_thermal"][name]["matrices"]
@@ -68,13 +81,18 @@ def check_denominator_comparison(cfg, names, notebook):
         fnl = table[(table.covariance_model == model) & (table.param == "f_NL")]
         values = fnl[["sigma_ana_common", "sigma_ana_noise", "sigma_ana_noise_spline"]].to_numpy().ravel()
         assert any(all(f"{value:.4f}" in block for value in values) for block in html)
+        values = fnl["sigma_ana_trad"].to_numpy()
+        assert any(all(f"{value:.4f}" in block for value in values) for block in html)
+    for name in names:
+        coverage = traditional["coverage"][name]
+        assert (coverage.removed_kpar_max.dropna() < traditional["kpar_min_Mpc_inv"]).all()
     return len(table)
 
 
 def run():
     cfg = json.loads((OUT / "run_config.json").read_text())
-    assert cfg["kmax"] > 0 and cfg["voxel_kmax"] > 0
-    assert cfg.get("kpar_max") is None or cfg["kpar_max"] > 0
+    assert cfg["kmax"] > 0
+    assert not {"kpar_max", "voxel_kmax"}.intersection(cfg)
     assert cfg["delta_z"] > 0
     assert cfg["noise_fisher_only"] is False
     assert not {"mock_file", "mock_k_unit", "mock_redshifts"}.intersection(cfg)
@@ -140,15 +158,14 @@ def run():
         individual_coverage.append(selected)
         assert selected.supported_nodes.sum() > 0
 
-        full, common, combined = (matrices[k] for k in
-                                  ["analytic_full", "analytic_common", "analytic_noise"])
-        full_min = information_difference(full, common)
+        assert "analytic_full" not in matrices
+        common, combined = (matrices[k] for k in ["analytic_common", "analytic_noise"])
         noise_min = information_difference(common, combined)
         constraints = pd.read_csv(OUT / f"constraints_{name}.csv", index_col=0)
         assert constraints.index.tolist() == forecast.PARAMETERS
         assert np.isfinite(constraints.to_numpy()).all()
-        for label, matrix in [("sigma_ana_full", full),
-                              ("sigma_ana_common", common),
+        assert not {"sigma_ana_full", "sigma_ana_full_cmb"}.intersection(constraints.columns)
+        for label, matrix in [("sigma_ana_common", common),
                               ("sigma_ana_noise", combined),
                               ("sigma_ana_noise_spline", matrices["analytic_noise_spline"])]:
             np.testing.assert_allclose(constraints[label],
@@ -177,7 +194,6 @@ def run():
         surveys.append(dict(
             telescope=name, status=summaries[name]["status"],
             supported_nodes=int(selected.supported_nodes.sum()),
-            full_minus_common_min_scaled_eigenvalue=full_min,
             common_minus_noise_min_scaled_eigenvalue=noise_min,
             **{key: float(value) for key, value in constraints.loc["f_NL"].items()}))
 
@@ -186,6 +202,8 @@ def run():
     pd.testing.assert_frame_equal(coverage, pd.concat(individual_coverage, ignore_index=True),
                                   check_dtype=False, rtol=1e-12, atol=1e-14)
     denominator_rows = check_denominator_comparison(namespace["cfg"], namespace["SURVEYS"], notebook)
+    traditional = joblib.load(OUT/"fisher_denominator_comparison.joblib")["traditional_foreground"]
+    assert traditional["kpar_min_Mpc_inv"] == namespace["TRAD_KPAR_MIN"]
     log = (OUT / "execution_notebook.log").read_text()
     seconds = float(re.search(r"Notebook execution complete: ([\d.]+)s", log).group(1))
     source_paths = [path, ROOT / "forecast_916.py", ROOT / "voxel_modes_916.py",
@@ -199,11 +217,14 @@ def run():
         denominator_model=forecast.TOTAL_DENOMINATOR,
         current_result_consistency_passed=True,
         fisher_kmax_Mpc_inv=cfg["kmax"],
-        fisher_kpar_max_Mpc_inv=cfg.get("kpar_max"),
-        voxel_calibration_kmax_Mpc_inv=cfg["voxel_kmax"],
+        independent_radial_cutoff=False,
+        voxel_calibration_kmax_Mpc_inv=float(table.k_max_Mpc_inv.iloc[0]),
+        full_domain_parameter_forecast_removed=True,
         voxel_variances_reused=True, fisher_only_update=True,
         spline_comparison_passed=True,
         both_analytic_denominators_checked=True,
+        traditional_foreground_comparison_checked=True,
+        traditional_kpar_min_Mpc_inv=traditional["kpar_min_Mpc_inv"],
         denominator_comparison_parameter_rows=denominator_rows,
         source_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in source_paths},
         surveys=surveys)

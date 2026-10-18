@@ -5,14 +5,14 @@ Notebook 调用 `run_fisher_only(cfg, SURVEYS)`，复用现有体素方差和 No
 它按当前分母更新 Fisher 基准，并同时计算线性与 spline；匹配结果存在时直接读取。
 随后调用 `compare_fisher_denominators(cfg, SURVEYS)`，并列展示解析项含/不含 P_N 的两种模型。
 该入口复用已有不含 P_N 的结果，只补齐缺失的含 P_N 模型，之后读取同一比较缓存。
-当前配置为 `delta_z=0.01`、Fisher 的 `kmax=0.2 Mpc^-1`。
-另设 `kpar_max=0.01 Mpc^-1`，解析与解析＋Noise共用这一独立径向上限。
-设为 `None` 可取消独立径向上限，仍保留总k球面边界与仪器原有下限。
-`voxel_kmax=0.363 Mpc^-1` 记录已有体素标定的上限，独立于 Fisher 分析范围。
+随后调用 `add_traditional_forecast(..., kpar_min=TRAD_KPAR_MIN)`，追加传统前景规避的两列参数误差。
+当前配置为 `delta_z=0.01`、Fisher 的 `kmax=0.363 Mpc^-1`。
+仅设置总波数上限；径向上界由 `k_parallel <= sqrt(kmax**2-k_perp**2)` 决定，
+并与仪器及 Noise 支持取交集。仪器原有下限和有效模式掩码保留。
 修改 notebook 的 `KMAX` 会更新 Fisher；已有体素方差继续作为固定的 Noise RMS 输入。
-修改 `KPAR_MAX` 只更新 Fisher；日常运行不重新计算体素方差。
+已移除独立的 `KPAR_MAX` 和 `VOXEL_KMAX` 配置；日常运行不重新计算体素方差。
 配置与计算单元都会重新加载磁盘上的 `forecast_916.py`，计算单元直接通过模块调用函数，
-避免继续使用旧内核中导入的函数；运行时显示 Fisher 与体素标定的两个上限。
+避免继续使用旧内核中导入的函数；运行时显示当前总波数上限。
 
 ## 文件作用
 
@@ -21,6 +21,7 @@ Notebook 调用 `run_fisher_only(cfg, SURVEYS)`，复用现有体素方差和 No
 | `forecast_916.py` | 组织信号、仪器噪声、新 Noise 接入、Fisher 和结果保存 |
 | `voxel_modes_916.py` | 有限盒子模式求和与三维 sinc 体素窗口；仅显式重建标定时加载 |
 | `diagnose_noise_916.py` | 红移平滑性和 k 下限增量诊断 |
+| `plot_snr_916.py` | HI／热噪声功率比、逐红移箱及累积的功率谱检测信噪比 |
 | `tests/verify_916.py` | 模式求和、坐标测度和预测流程的数值验证 |
 | `tests/check_common_kmax.py` | 核对保存结果、共同域、分母模型和体素方差一致性 |
 | `tools/execute_notebook.py` | 在干净内核中执行 notebook 并保存输出 |
@@ -52,7 +53,7 @@ denom_total = denom_ana + denom_noise
 
 每个望远镜读取已有体素方差，沿 `z_mid` 插值方差并取平方根，取得查询 RMS。
 插值在 `(z, log sigma)` 和 `(k_perp, k_parallel)` 上完成，波数单位显式转换。
-两种对照使用同一有效域；`sigma_ana_full` 单独保留完整仪器域解析约束。
+原六列仅计算相同共同有效域的参数约束；完整仪器域解析参数预测已移除。
 
 默认 `noise_fisher_only=False`，使用完整200×200 Noise表的数值有效部分。
 实际 Fisher 积分域仍与仪器覆盖及 `k<=cfg.kmax` 取交集，不作表外外推。
@@ -78,7 +79,7 @@ denom_total = denom_ana + denom_noise
 
 ## 线性与三次样条对比
 
-`run_fisher_only` 读取现有体素表，更新完整仪器域解析基准，
+`run_fisher_only` 读取现有体素表，
 共同域只计算一遍，共用信号导数和积分节点，同时得到解析、双线性与三次样条预测。
 Notebook 从 `compare_fisher_denominators` 的统一结果展示两种分母各自的插值对照。
 `compare_noise_interpolations` 仍可单独读取默认模型的插值结果。
@@ -102,10 +103,65 @@ Notebook 从 `compare_fisher_denominators` 的统一结果展示两种分母各�
 | `noise_interpolation_comparison.csv` | 五个望远镜的 f_NL 误差、相对变化、CMB 组合和回退权重占比 |
 | `noise_interpolation_comparison.joblib` | 三组共同域矩阵、全部参数误差、检查信息和输入指纹 |
 | `fisher_denominator_comparison.csv` | 两种解析分母、五个配置、七个参数，共70行的全部约束 |
-| `fisher_denominator_comparison.joblib` | 两种模型的完整/共同域矩阵、线性/spline与CMB组合及输入指纹 |
+| `fisher_denominator_comparison.joblib` | 两种模型的共同域矩阵、线性/spline与CMB组合及输入指纹 |
 
 输入及相关计算代码未变时直接读取对应缓存，不重复计算。
 需要明确强制重算对比时可使用 `reuse_saved=False`。
+
+## 传统前景规避对照
+
+Notebook 的 `TRAD_KPAR_MIN=0.02` 只控制新增分支，单位为 $\mathrm{Mpc}^{-1}$。
+原六列、总波数上限0.363和已有体素输入不变。
+新增两列为 `sigma_ana_trad`、`sigma_ana_trad_cmb`，均给出全部七参数的边缘化误差。
+
+$$
+\mathcal D_{\rm trad}=\mathcal D_{\rm common}\cap\{|k_\parallel|\ge0.02\},\qquad
+F^{\rm trad}=F^{\rm common}_{\rm ana}-F^{|k_\parallel|<0.02}_{\rm ana}.
+$$
+
+只积分被前景截断删去的窄条带，0.02作为准确求积边界；复用原红移节点、RMS和体积权重。
+两种解析分母共用条带的信号导数：不含热噪声表使用 $P_{\rm HI}^2$，
+含热噪声表使用 $(P_{\rm HI}+P_N)^2$，两者均不添加恢复 Noise 方差。
+Noise 标定仅用于对齐共同域，不把其方差加入新增分母。
+
+新增矩阵 `analytic_trad` 与缓存信息 `traditional_foreground` 保存在既有
+`fisher_denominator_comparison.joblib` 中，不增加另一套源码或结果目录。
+该缓存单独检查径向下限、原解析矩阵、共同域节点及新增代码；改变传统下限不重算原六列。
+`constraints_<survey>.csv` 追加默认模型的两列；统一比较 CSV 和 notebook 同时展示两种解析分母的八列结果。
+原 `fisher_<survey>.joblib` 继续保存原来的三组矩阵。
+
+比较传统列与原 Noise 列，衡量低径向波数的信息收益能否抵消恢复散布；不预设恢复方法一定更优。
+
+## 不同望远镜的信噪比图
+
+Notebook 的“不同望远镜配置的信噪比”单元调用 `plot_snr_916.plot_snr(cfg, SURVEYS)`：
+
+- `outputs_916/snr_power_ratio.png`：共同的 $z=1$、$k_\parallel=0.005\,\mathrm{Mpc}^{-1}$ 下，
+  绘制 HI 功率、五个配置的仪器热噪声功率及 $P_{\rm HI}/P_N$。曲线空缺表示没有有效模式。
+- `outputs_916/snr_by_redshift.png`：每个红移箱及累积的功率谱检测 S/N；
+  实线包含热噪声，虚线为同一模式域的宇宙方差极限。
+- `outputs_916/snr_by_redshift.csv`：逐箱及累积数值、有效体积与 Gaussian 模式数。
+- `outputs_916/snr_diagnostics.joblib`：绘图数据及配置、源码、基线输入指纹；匹配时直接复用。
+
+功率比没有计入宇宙方差或模式数。第二张图检测的是整体幅度 $a$，即 $P_{\rm HI}\to aP_{\rm HI}$，
+在 $a=1$、其他参数固定时：
+
+$$
+(S/N)_b^2=\int_b dz\,\frac{dV/dz}{4\pi^2}
+\int_{\mathcal D_{\rm full}(z),\,k_\parallel>0}
+k_\perp\,dk_\perp\,dk_\parallel\,
+\left[\frac{P_{\rm HI}}{P_{\rm HI}+P_N}\right]^2,
+\qquad (S/N)_{\le z}^2=\sum_{b\le z}(S/N)_b^2.
+$$
+
+使用当前总波数上限及仪器有效模式域；保留原有下限与掩码，不另设径向上限。
+这些仪器诊断不加入条件恢复 Noise 或 CMB，也不是边缘化后的 $f_{\rm NL}$ 检测显著性。
+红移箱沿用 Fisher 的积分分段与连续模式计数；逐箱 S/N 表示这一段的近似信息贡献，
+不是对每个宽度0.01的薄壳单独做 FFT 后的测量显著性。
+频段边缘按实际覆盖体积计数；不足一个完整箱时 S/N 会降低，这不表示噪声功率突变。
+程序只需一个基准宇宙学模型，不计算参数导数，不重算体素方差或参数 Fisher。
+单独生成／更新图像可运行 `python plot_snr_916.py`，此时配置读取已有 `outputs_916/run_config.json`。
+日常仍只需运行 notebook；其中的 `cfg` 是信噪比绘图使用的配置。
 
 ## 验证与重新运行
 

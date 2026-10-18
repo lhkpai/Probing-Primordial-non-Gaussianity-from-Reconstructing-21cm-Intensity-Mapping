@@ -39,7 +39,7 @@ class ModeDiagnostic:
         self.cfg = cfg
         self.cosmology = cosmology
         self.integrator = FiniteBoxVoxelIntegrator(
-            cfg.boxsize_mpc_h, cfg.grid_size, cfg.h_mock, cfg.voxel_kmax)
+            cfg.boxsize_mpc_h, cfg.grid_size, cfg.h_mock, cfg.kmax)
         # Read-only geometry reuse avoids constructing a dense 512^3 array.
         self.g = self.integrator._geometry
         self.p = self.g.k_perp
@@ -48,7 +48,7 @@ class ModeDiagnostic:
 
     def snapshot(self, experiment, z):
         geom = self.cosmology.geometry(z)
-        e = dict(experiment, kmax=self.cfg.voxel_kmax,
+        e = dict(experiment, kmax=self.cfg.kmax,
                  dnutot=experiment["survey_dnutot"])
         kfg, _ = forecast.bf.noise_k_limits(geom, e)
         first = int(np.ceil(kfg/self.kf))
@@ -127,7 +127,7 @@ class ModeDiagnostic:
 
 def verify_radial_sum():
     """Independent small-box 3D sum checks the added radial floor and empty sets."""
-    cfg = forecast.Config(boxsize_mpc_h=80., h_mock=1., grid_size=10, voxel_kmax=.6)
+    cfg = forecast.Config(boxsize_mpc_h=80., h_mock=1., grid_size=10, kmax=.6)
     diagnostic = ModeDiagnostic(cfg, None)
     p, g = diagnostic.p, diagnostic.g
     axial = 2*g.longitudinal_window*np.exp((g.longitudinal_k/.9)**2)
@@ -410,7 +410,7 @@ def report(smooth, cuts, jumps, fine, out, cfg):
                             f"（z={q.z_before:.6f}→{q.z_after:.6f}），分解主项为{dominant}。"
                             f"该局部细采样的最高邻点突起比为 {peak_ratio:.3f}。")
     lines = ["# 9.16 噪声方差的红移与低波数诊断", "",
-             f"配置：Δz={cfg.delta_z}，Fisher 与体素方差上限均为 {cfg.voxel_kmax} Mpc⁻¹。",
+             f"配置：Δz={cfg.delta_z}，总波数上限为 {cfg.kmax} Mpc⁻¹。",
              "基准逐箱重算与主程序 CSV 核对通过；新增径向截断通过独立小盒子三维求和检查。", "",
              "## 定义", "",
              "测试每个红移节点的实际最低有效总波数 k_min(z) 加 0.01、0.02、0.03 Mpc⁻¹；",
@@ -465,7 +465,7 @@ def report(smooth, cuts, jumps, fine, out, cfg):
               "- 提高下限只删除非负贡献，方差及模式数必须不增加；方差变小不等于仪器灵敏度提高。",
               "- 相邻箱分解见 z_transitions.csv；最高波动区间的细采样见 z_fine_snapshots.csv。", ""]
     (out/"analysis.md").write_text("\n".join(lines),encoding="utf-8")
-    summary = dict(configuration=dict(delta_z=cfg.delta_z,kmax=cfg.voxel_kmax),
+    summary = dict(configuration=dict(delta_z=cfg.delta_z,kmax=cfg.kmax),
                    interpretation="minimum retained total k at each z plus an increment, in Mpc^-1",
                    baseline_csv_reproduced=True,radial_sum_bruteforce_passed=True,
                    smoothness=summaries,k_floor=cut_summary)
@@ -483,9 +483,9 @@ def main():
         parser.error("--fine-points must be at least 3")
     cfg_data = json.loads((output_root/"run_config.json").read_text())
     cfg = forecast.Config(**cfg_data)
-    if cfg.kmax != cfg.voxel_kmax:
-        raise ValueError("Run the forecast with matching Fisher and voxel kmax first.")
     source = pd.read_csv(Path(cfg.output_dir)/"voxel_noise_all_surveys.csv")
+    if not np.allclose(source.k_max_Mpc_inv, cfg.kmax):
+        raise ValueError("Diagnostic kmax must match the saved voxel calibration range.")
     verify_radial_sum()
     cosmology = forecast.Cosmology(cfg)
     results = []

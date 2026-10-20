@@ -121,7 +121,7 @@ $$
 径向下限的单位为 $\mathrm{Mpc}^{-1}$，总波数上限均为 $0.363\,\mathrm{Mpc}^{-1}$。
 “解析模型”列直接列出各行使用的解析分母 $D_{\rm ana}$。
 
-| 解析模型 | 望远镜 | 无额外下限 | 下限0.01 | 下限0.02 | Noise线性 | Noise spline | Noise线性+CMB | Noise spline+CMB |
+| 解析模型 | 望远镜 | $\sigma(f_{\rm NL})$ | 添加 $k_\parallel$ 下限0.01 | 添加 $k_\parallel$ 下限0.02 | Noise线性 | Noise spline | Noise线性+CMB | Noise spline+CMB |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | $(P_{\rm HI}+P_N)^2$ | SKA-MID | 40.2700 | 47.3426 | 60.2830 | 40.8961 | 40.8964 | 5.0367 | 5.0367 |
 | $(P_{\rm HI}+P_N)^2$ | CHIME | 10.1875 | 11.2025 | 12.7651 | 12.4067 | 12.4047 | 4.4542 | 4.4541 |
@@ -136,9 +136,9 @@ $$
 
 **列义与比较方式**
 
-1. **无额外下限**：第一项约束结果，对应 `sigma_ana_common`。不额外施加0.01／0.02前景截断；
-   仪器下限和 Noise 标定支持仍保留，不是从 $k_\parallel=0$ 积分。
-2. **下限0.01、0.02**：传统解析分支分别采用 $|k_\parallel|\ge0.01$、$|k_\parallel|\ge0.02$，不加恢复 Noise 方差。
+1. **$\sigma(f_{\rm NL})$**：当前共同域的解析约束，对应 `sigma_ana_common`。
+   保留仪器下限和 Noise 标定支持，不另加0.01／0.02前景截断。
+2. **添加 $k_\parallel$ 下限0.01／0.02**：传统解析分支分别采用 $|k_\parallel|\ge0.01$、$|k_\parallel|\ge0.02$，不加恢复 Noise 方差。
 3. **Noise线性、Noise spline**：在未额外截断的共同域内，分别使用
    $D_{\rm ana}+P_{\rm HI}^2\widetilde A_{\rm linear}$、$D_{\rm ana}+P_{\rm HI}^2\widetilde A_{\rm spline}$。
 4. **Noise线性+CMB、Noise spline+CMB**：分别将线性、spline 的 Fisher 矩阵与同一 CMB 先验相加，

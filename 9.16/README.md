@@ -132,6 +132,23 @@ Noise 标定仅用于对齐共同域，不把其方差加入新增分母。
 
 比较传统列与原 Noise 列，衡量低径向波数的信息收益能否抵消恢复散布；不预设恢复方法一定更优。
 
+### 更多径向下限的对比
+
+在相同共同域、红移节点和两种解析分母下，补算0.05、0.1、0.2下限：
+
+```bash
+python compare_foreground_cuts_916.py --cuts 0.05 0.1 0.2
+```
+
+三个下限共用信号导数，直接积分保留区间并累加互不重叠的径向条带，避免大矩阵相减。
+Noise 表仅确定共同域，不向这些传统解析分母添加恢复方差；已有体素方差与原参数结果均复用。
+
+- `outputs_916/foreground_cutoff_comparison.csv`：新增下限的全部七参数误差及原 CMB 先验组合。
+- 同名 `.joblib`：Fisher 矩阵、逐红移覆盖及缓存指纹；逐望远镜保存进度，匹配输入时直接复用。
+- `outputs_916/implementation_notes.md` 第3.3节：与原0.01、0.02及 Noise 结果放在同一表中对比。
+- `python tests/check_foreground_cuts_916.py`：独立积分、求积加密和有效域检查。
+- `python tests/check_foreground_cuts_916.py --saved-only`：核对全部已保存矩阵、参数误差及缓存复用，不重算积分。
+
 ## 不同望远镜的信噪比图
 
 Notebook 的“不同望远镜配置的信噪比”单元调用 `plot_snr_916.plot_snr(cfg, SURVEYS)`：

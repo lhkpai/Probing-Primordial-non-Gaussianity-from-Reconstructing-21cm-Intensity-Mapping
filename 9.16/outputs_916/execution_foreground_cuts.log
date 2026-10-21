@@ -1,0 +1,75 @@
+[ska_mid1_interferom] radial cuts: z node 50/524
+[ska_mid1_interferom] radial cuts: z node 100/524
+[ska_mid1_interferom] radial cuts: z node 150/524
+[ska_mid1_interferom] radial cuts: z node 200/524
+[ska_mid1_interferom] radial cuts: z node 250/524
+[ska_mid1_interferom] radial cuts: z node 300/524
+[ska_mid1_interferom] radial cuts: z node 350/524
+[ska_mid1_interferom] radial cuts: z node 400/524
+[ska_mid1_interferom] radial cuts: z node 450/524
+[ska_mid1_interferom] radial cuts: z node 500/524
+[ska_mid1_interferom] radial cuts: z node 524/524
+[ska_mid1_interferom] saved all 3 radial cuts.
+[chime_icyl] radial cuts: z node 50/356
+[chime_icyl] radial cuts: z node 100/356
+[chime_icyl] radial cuts: z node 150/356
+[chime_icyl] radial cuts: z node 200/356
+[chime_icyl] radial cuts: z node 250/356
+[chime_icyl] radial cuts: z node 300/356
+[chime_icyl] radial cuts: z node 350/356
+[chime_icyl] radial cuts: z node 356/356
+[chime_icyl] saved all 3 radial cuts.
+/home/liuhk/research/9.16/forecast_916.py:93: UserWarning: hirax_interferom: baseline file missing; uniform; assumed Dmin=6 m, Dmax=200 m
+  warnings.warn(f"{name}: baseline file missing; {e['baseline_source']}")
+[hirax_interferom] radial cuts: z node 50/350
+[hirax_interferom] radial cuts: z node 100/350
+[hirax_interferom] radial cuts: z node 150/350
+[hirax_interferom] radial cuts: z node 200/350
+[hirax_interferom] radial cuts: z node 250/350
+[hirax_interferom] radial cuts: z node 300/350
+[hirax_interferom] radial cuts: z node 350/350
+[hirax_interferom] saved all 3 radial cuts.
+[tianlai_icyl] radial cuts: z node 50/217
+[tianlai_icyl] radial cuts: z node 100/217
+[tianlai_icyl] radial cuts: z node 150/217
+[tianlai_icyl] radial cuts: z node 200/217
+[tianlai_icyl] radial cuts: z node 217/217
+[tianlai_icyl] saved all 3 radial cuts.
+[meerkat_b1_interferom] radial cuts: z node 50/212
+[meerkat_b1_interferom] radial cuts: z node 100/212
+[meerkat_b1_interferom] radial cuts: z node 150/212
+[meerkat_b1_interferom] radial cuts: z node 200/212
+[meerkat_b1_interferom] radial cuts: z node 212/212
+[meerkat_b1_interferom] saved all 3 radial cuts.
+            telescope    covariance_model  kpar_min_Mpc_inv param        sigma  sigma_cmb
+  ska_mid1_interferom         signal_only              0.05  f_NL     2.957054   1.948284
+  ska_mid1_interferom         signal_only              0.10  f_NL     4.200528   2.470286
+  ska_mid1_interferom         signal_only              0.20  f_NL     9.904227   3.763178
+  ska_mid1_interferom signal_plus_thermal              0.05  f_NL   116.383292   5.087376
+  ska_mid1_interferom signal_plus_thermal              0.10  f_NL   367.167581   5.098233
+  ska_mid1_interferom signal_plus_thermal              0.20  f_NL  4517.488614   5.099967
+           chime_icyl         signal_only              0.05  f_NL     8.060714   3.639259
+           chime_icyl         signal_only              0.10  f_NL    11.990596   4.155876
+           chime_icyl         signal_only              0.20  f_NL    25.861972   4.833526
+           chime_icyl signal_plus_thermal              0.05  f_NL    19.132267   4.697617
+           chime_icyl signal_plus_thermal              0.10  f_NL    39.031722   4.947651
+           chime_icyl signal_plus_thermal              0.20  f_NL   199.574627   5.091160
+     hirax_interferom         signal_only              0.05  f_NL     7.463269   3.465346
+     hirax_interferom         signal_only              0.10  f_NL    10.995760   4.036044
+     hirax_interferom         signal_only              0.20  f_NL    24.974061   4.824537
+     hirax_interferom signal_plus_thermal              0.05  f_NL    21.694010   4.689635
+     hirax_interferom signal_plus_thermal              0.10  f_NL    48.978567   4.973634
+     hirax_interferom signal_plus_thermal              0.20  f_NL   372.905207   5.096361
+         tianlai_icyl         signal_only              0.05  f_NL    37.088449   4.966540
+         tianlai_icyl         signal_only              0.10  f_NL    57.702965   5.018869
+         tianlai_icyl         signal_only              0.20  f_NL   227.628962   5.073367
+         tianlai_icyl signal_plus_thermal              0.05  f_NL    44.259503   5.003386
+         tianlai_icyl signal_plus_thermal              0.10  f_NL    71.578726   5.049871
+         tianlai_icyl signal_plus_thermal              0.20  f_NL   366.386866   5.092010
+meerkat_b1_interferom         signal_only              0.05  f_NL    65.736035   5.037603
+meerkat_b1_interferom         signal_only              0.10  f_NL   101.027565   5.062357
+meerkat_b1_interferom         signal_only              0.20  f_NL   400.404489   5.089924
+meerkat_b1_interferom signal_plus_thermal              0.05  f_NL   833.922955   5.099733
+meerkat_b1_interferom signal_plus_thermal              0.10  f_NL  2281.317942   5.099921
+meerkat_b1_interferom signal_plus_thermal              0.20  f_NL 39992.046612   5.099980
+Radial-cut comparison elapsed seconds: 1272.47

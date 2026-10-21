@@ -1,0 +1,51 @@
+{
+  "telescope": "hirax_interferom",
+  "z": 2.501,
+  "cuts_Mpc_inv": [
+    0.05,
+    0.1,
+    0.2
+  ],
+  "independent_direct_integral_max_scaled_difference": {
+    "0.05/signal_only": 7.392801905539085e-09,
+    "0.05/signal_plus_thermal": 7.806787109985714e-10,
+    "0.1/signal_only": 1.233836971474286e-08,
+    "0.1/signal_plus_thermal": 1.7049840852206898e-08,
+    "0.2/signal_only": 1.3606048096261888e-08,
+    "0.2/signal_plus_thermal": 1.9141265076629394e-08
+  },
+  "refinement_max_scaled_difference": {
+    "0.05/signal_only": 5.160869303254575e-09,
+    "0.1/signal_only": 5.12967861366048e-09,
+    "0.2/signal_only": 2.454460497700071e-09,
+    "0.05/signal_plus_thermal": 3.946345698829431e-08,
+    "0.1/signal_plus_thermal": 1.6313670248692735e-08,
+    "0.2/signal_plus_thermal": 7.84108085326796e-09
+  },
+  "refinement_max_relative_marginalized_sigma_change": {
+    "0.05/signal_only": 1.589425894232832e-07,
+    "0.1/signal_only": 9.712317688981287e-07,
+    "0.2/signal_only": 1.9805014752627415e-06,
+    "0.05/signal_plus_thermal": 1.5182458179552327e-07,
+    "0.1/signal_plus_thermal": 1.349948290374492e-06,
+    "0.2/signal_plus_thermal": 2.9329221092888602e-06
+  },
+  "nested_domain_information_checked": true,
+  "added_noise_variance": false,
+  "voxel_variances_recalculated": false,
+  "production": {
+    "surveys": 5,
+    "models": 2,
+    "cuts_Mpc_inv": [
+      0.05,
+      0.1,
+      0.2
+    ],
+    "parameter_rows": 210,
+    "matrices_checked": 30,
+    "minimum_scaled_information_difference_eigenvalue": 4.081281154719399e-05,
+    "covariance_and_cmb_verified": true,
+    "errors_monotonic_with_cut": true,
+    "matching_cache_reused_without_calculation": true
+  }
+}
